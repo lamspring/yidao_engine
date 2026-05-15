@@ -2,6 +2,10 @@
   <img src="assets/logo.png" alt="易道虚拟机引擎 Logo" width="200">
 </p>
 
+> 📢 **正式接受社区世界观配置贡献！**
+> 欢迎提交你的世界观 JSON + 文学语库变体。
+> 详见 [CONTRIBUTING.md](CONTRIBUTING.md) · 所有 PR 经人工审核后合并
+
 # 易道虚拟机引擎 (Yidao Virtual Machine Engine)
 
 [![License: Code](https://img.shields.io/badge/code-Apache--2.0-blue.svg)](LICENSE-CODE)
