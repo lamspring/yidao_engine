@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """语义包构造器 — 支持世界观绑定"""
 from codex import get_gua
+from renderer import get_sensory_packet, get_protocol_library
 
 
 def _translate(text: str, worldview) -> str:
@@ -40,6 +41,22 @@ def format_member_detailed(snap, member_name, worldview=None):
         if w_sensory.get('visual'): sensory['visual'] = w_sensory['visual'][:3]
         if w_sensory.get('sound'): sensory['sound'] = w_sensory['sound'][:3]
         if w_sensory.get('mood'): sensory['mood'] = w_sensory['mood'][:3]
+
+    # Route-C v2：注入系统象法语库（8维度 + 文学变体）
+    lib = get_protocol_library(snap['body_protocol'])
+    lit_variants = lib.get('variants', {})
+    variant_lines = []
+    for k, v in lit_variants.items():
+        variant_lines.append(f"    [{k}] {v}")
+    lit_block = "\n".join(variant_lines) if variant_lines else "    （无预设变体）"
+
+    # 根据 phase 选择确定性感官词
+    phase_idx = int(snap['center_phase'] * 10) % 5
+    def _pick(items, idx):
+        if not items:
+            return "—"
+        return items[idx % len(items)]
+
     return f"""【{member_name}】tick {snap['tick']}
 单点: {snap['center_gua_name']}({snap['center_gua']}) | {snap['center_protocol']} | 相位:{snap['center_phase']:.2f} | 势能:{snap['center_pot']:.2f}
 体: {snap['body_name']}({snap['body_hex']}) | {body_p} | 本质: {snap['body_nature']}
@@ -48,6 +65,9 @@ def format_member_detailed(snap, member_name, worldview=None):
 关系: {rel} | {rel_desc}
 势能: {snap['pot_label']} ({snap['pot_atmosphere']})
 感官: 视-{', '.join(sensory['visual'])} | 听-{', '.join(sensory['sound'])} | 动-{', '.join(sensory['motion'])} | 情-{', '.join(sensory['mood'])}
+象法语库（8维）: 视-{_pick(lib['visual'], phase_idx)} | 听-{_pick(lib['sound'], phase_idx)} | 触-{_pick(lib['touch'], phase_idx)} | 嗅-{_pick(lib['smell'], phase_idx)} | 味-{_pick(lib['taste'], phase_idx)} | 情-{_pick(lib['mood'], phase_idx)} |  tempo-{_pick(lib['tempo'], phase_idx)} | 形-{_pick(lib['geometry'], phase_idx)}
+文学变体（可选）:
+{lit_block}
 """
 
 

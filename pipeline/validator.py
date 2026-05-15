@@ -20,7 +20,7 @@ def validate_raw(output: str, story_data: dict) -> list[tuple[str, bool]]:
 
 
 def validate_polished(output: str, narrative_part: str, member_names: list[str]) -> list[tuple[str, bool]]:
-    """验证 polished 风格输出"""
+    """验证 polished 风格输出（Route-C v2）"""
     checks = []
     # 正文零数据引用
     forbidden = ["相位", "势能", "交互分", "同卦共鸣", "先天对卦", "体协议", "用协议", "卦象"]
@@ -34,6 +34,10 @@ def validate_polished(output: str, narrative_part: str, member_names: list[str])
     checks.append(("有家庭/互动氛围", any(w in output for w in ["父亲", "母亲", "家", "家里", "家人", "争吵", "拥抱", "沉默", "对视"])))
     checks.append(("有对应关系标注（附录）", "对应关系" in output or "对应表" in output))
     checks.append(("有质量自检", "自检" in output or "因果链" in output))
+    # Route-C v2：检查映射标注中是否有系统概念锚定
+    annotation = output.split("### 对应关系")[-1] if "### 对应关系" in output else ""
+    checks.append(("映射标注中有系统概念锚定", "系统概念" in annotation or "【" in annotation))
+    checks.append(("映射标注中有LLM文学映射", "文学映射" in annotation or "LLM" in annotation))
     return checks
 
 
