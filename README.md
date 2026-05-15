@@ -1,8 +1,45 @@
-# 《易道动态世界引擎》v4.0 — YDWE (Yi Dynamic World Engine)
+# 易道虚拟机引擎 (Yidao Virtual Machine Engine)
 
-基于《易经》阴阳爻、先天八卦、六爻生命周期、《道德经》反者道之动设计的**自演化世界模拟器**。
+[![License: Code](https://img.shields.io/badge/code-Apache--2.0-blue.svg)](LICENSE-CODE)
+[![License: Docs](https://img.shields.io/badge/docs-CC%20BY--SA%204.0-green.svg)](LICENSE-DOCS)
+[![License: Content](https://img.shields.io/badge/content-CC%20BY%204.0-orange.svg)](LICENSE-CONTENT)
 
-**这不是游戏引擎。这是东方信息宇宙模型的计算内核。**
+> **用《易经》的数学结构，给 AI 一个真实运行的世界去观察和讲述。**
+
+易道引擎（YVM）是一个基于 64 卦象的**确定性世界模拟器**。它不依赖随机数，而是用阴阳爻的数学结构驱动世界的演化——每个 tick 都是卦象的交感、推移与穷极则变。
+
+LLM 不是在这里"编故事"，而是作为一个**观象者**，观测一个真实运行的世界，并把结构数据翻译成人类可读的叙事。
+
+**核心差异**：传统 AI 叙事是"从语言到语言"，YVM 是"从结构到语言"——卦象提供了世界演化的物理定律，LLM 只是翻译官。
+
+---
+
+## 快速开始
+
+```bash
+# 安装依赖
+pip install numpy
+
+# 运行一个五口之家的家庭史诗（白描风格）
+python main.py --mode family --style polished
+
+# 切换到修仙世界观
+python main.py --worldview xiuxian
+
+# 切换到克苏鲁世界观
+python main.py --worldview cthulhu
+
+# 加载已有世界继续运行
+python main.py --load my_world --ticks 500
+```
+
+详见 [QUICKSTART.md](QUICKSTART.md)。
+
+---
+
+## 核心哲学
+
+> **世界不是物体集合，而是阴阳流动形成的暂时稳定结构。**
 
 ---
 
