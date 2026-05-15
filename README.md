@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="易道虚拟机引擎 Logo" width="200">
+</p>
+
 # 易道虚拟机引擎 (Yidao Virtual Machine Engine)
 
 [![License: Code](https://img.shields.io/badge/code-Apache--2.0-blue.svg)](LICENSE-CODE)
@@ -65,6 +69,8 @@ python main.py --load my_world --ticks 500
 | **势** | 反向势能场 | `V` | 万物之**待发**。长期稳定中积累的"即将反转"的能量，是"反者道之动"的量化体现。 |
 
 **P（六爻生命周期）**则是时间在三才身上刻下的年轮，记录每个局部结构经历了多少"气象流动"而走向成熟或衰变。
+
+![系统架构图](assets/architecture.png)
 
 > **为什么 `T` 不直接由 `S` 算出，而要作为独立状态场存在？**
 >
@@ -282,4 +288,12 @@ print(info["mean_potential"])           # 平均势能
 
 > *"反者道之动，弱者道之用。"*
 >
+## 联系我们
+
+如有问题、建议或合作意向，欢迎联系：
+
+📧 **lamspring@yeah.net**
+
+---
+
 > *"万物负阴而抱阳，冲气以为和。"*
