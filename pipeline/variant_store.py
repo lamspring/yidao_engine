@@ -5,6 +5,17 @@ import os
 from typing import List, Dict, Optional
 
 
+# 系统默认变体的英文别名（Windows 终端友好）
+_VARIANT_ALIASES = {
+    "dao": "道家",
+    "scifi": "科幻",
+    "sciencefiction": "科幻",
+    "myth": "神话",
+    "existentialism": "存在主义",
+    "exist": "存在主义",
+}
+
+
 class VariantStore:
     """
     管理协议文学变体的三层存储：
@@ -20,6 +31,11 @@ class VariantStore:
         self._load_defaults()
         if worldview:
             self._load_worldview(worldview)
+
+    @staticmethod
+    def _resolve_tag(tag: str) -> str:
+        """将英文别名解析为中文标签。"""
+        return _VARIANT_ALIASES.get(tag.lower(), tag)
 
     def _load_defaults(self):
         """从 renderer.PROTOCOL_LIBRARY 加载系统默认变体。"""
@@ -79,7 +95,8 @@ class VariantStore:
         return result
 
     def get_variant_content(self, protocol: str, tag: str) -> Optional[str]:
-        """按优先级查找变体内容。"""
+        """按优先级查找变体内容（支持英文别名）。"""
+        tag = self._resolve_tag(tag)
         if protocol in self._session and tag in self._session[protocol]:
             return self._session[protocol][tag]
         if protocol in self._worldview_variants and tag in self._worldview_variants[protocol]:
@@ -95,6 +112,7 @@ class VariantStore:
 
     def add_variant(self, protocol: str, tag: str, content: str) -> bool:
         """添加会话级变体。如果 tag 已存在（任意层级），返回 False。"""
+        tag = self._resolve_tag(tag)
         if self.has_variant(protocol, tag):
             return False
         if protocol not in self._session:
@@ -104,6 +122,7 @@ class VariantStore:
 
     def remove_variant(self, protocol: str, tag: str) -> bool:
         """删除变体。只能删除会话级。"""
+        tag = self._resolve_tag(tag)
         if protocol in self._session and tag in self._session[protocol]:
             del self._session[protocol][tag]
             if not self._session[protocol]:
@@ -113,6 +132,7 @@ class VariantStore:
 
     def update_variant(self, protocol: str, tag: str, content: str) -> bool:
         """更新变体。只能更新会话级。"""
+        tag = self._resolve_tag(tag)
         if protocol in self._session and tag in self._session[protocol]:
             self._session[protocol][tag] = content
             return True

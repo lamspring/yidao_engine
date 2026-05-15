@@ -394,6 +394,8 @@ def run_interactive(cfg: PipelineConfig, args):
 
         elif cmd_name == "variant" and len(parts) >= 2:
             tag = parts[1]
+            # 清理 Windows 终端可能引入的 surrogates
+            tag = tag.encode("utf-8", "replace").decode("utf-8")
             if tag.lower() in ("off", "none", "null"):
                 runner.camera.variant_lock = None
                 print("  变体锁定已解除")

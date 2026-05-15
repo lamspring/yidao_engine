@@ -20,6 +20,13 @@ from pipeline import state_manager
 from codex import get_gua
 
 
+def _clean_surrogates(text: str) -> str:
+    """清理字符串中的 UTF-16 surrogates，防止 JSON 序列化失败。"""
+    if not text:
+        return text
+    return text.encode("utf-8", "replace").decode("utf-8")
+
+
 @dataclass
 class NarrativeEntry:
     """单幕叙事历史记录"""
@@ -166,11 +173,7 @@ class InteractiveRunner:
                     names.append(desc.split(" — ")[0].strip())
 
         if self.camera.style == "polished":
-            narrative = output
-            for marker in ["### 对应关系", "### 二、对应关系", "### 附录", "### 映射标注", "### 叙事质量自检", "### 三、叙事质量自检"]:
-                if marker in output:
-                    narrative = output.split(marker)[0]
-                    break
+            narrative = validator._extract_narrative(output)
             checks = validator.validate_polished(output, narrative, names)
         else:
             checks = validator.validate_raw(output, {})
@@ -316,12 +319,13 @@ class InteractiveRunner:
 
         # 变体锁定覆盖
         variant_lines = []
-        if self.camera.variant_lock:
-            content = self.variant_store.get_variant_content(snap['body_protocol'], self.camera.variant_lock)
+        clean_lock = _clean_surrogates(self.camera.variant_lock)
+        if clean_lock:
+            content = self.variant_store.get_variant_content(snap['body_protocol'], clean_lock)
             if content:
-                variant_lines.append(f"    [锁定变体: {self.camera.variant_lock}] {content}")
+                variant_lines.append(f"    [锁定变体: {clean_lock}] {content}")
             else:
-                variant_lines.append(f"    [锁定变体: {self.camera.variant_lock}] 该协议下无此变体，使用默认")
+                variant_lines.append(f"    [锁定变体: {clean_lock}] 该协议下无此变体，使用默认")
         else:
             # 列出所有可用变体（供 LLM 参考）
             variants = self.variant_store.list_variants(snap['body_protocol'])
@@ -367,8 +371,9 @@ class InteractiveRunner:
         else:
             camera_block += "请使用中景描写：人物与环境的关系、互动场景。\n"
 
-        if self.camera.variant_lock:
-            camera_block += f"文学视角锁定：请优先使用 '{self.camera.variant_lock}' 视角的语库进行描写。\n"
+        clean_lock = _clean_surrogates(self.camera.variant_lock)
+        if clean_lock:
+            camera_block += f"文学视角锁定：请优先使用 '{clean_lock}' 视角的语库进行描写。\n"
 
         if self.camera.focus != "family":
             camera_block += f"当前聚焦：{self.camera.focus}。请以该对象为核心展开叙事。\n"
@@ -469,7 +474,7 @@ class InteractiveRunner:
             "last_explain_tick": self.last_explain_tick,
             "total_tokens_used": self._total_tokens_used,
         }
-        with open(session_path, "w", encoding="utf-8") as f:
+        with open(session_path, "w", encoding="utf-8", errors="replace") as f:
             import json
             json.dump(session_data, f, ensure_ascii=False, indent=2)
         return os.path.join(state_dir, name)
