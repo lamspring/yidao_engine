@@ -1,0 +1,121 @@
+name: Validate Worldview Configs
+
+on:
+  pull_request:
+    paths:
+      - 'configs/worldviews/**'
+  push:
+    branches: [main, master]
+    paths:
+      - 'configs/worldviews/**'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Validate worldview JSON files
+        run: |
+          python << 'EOF'
+          import json
+          import os
+          import sys
+
+          REQUIRED_PROTOCOLS = ["承载", "激变", "深渊", "渗透", "止界", "显文明", "交换", "创序"]
+          FORBIDDEN_TERMS = ["卦", "相位", "势能", "协议", "趋势", "爻"]
+          errors = []
+          warnings = []
+
+          worldviews_dir = "configs/worldviews"
+          if not os.path.exists(worldviews_dir):
+              print("[INFO] No worldviews directory found")
+              sys.exit(0)
+
+          for filename in sorted(os.listdir(worldviews_dir)):
+              if not filename.endswith(".json"):
+                  continue
+
+              path = os.path.join(worldviews_dir, filename)
+              name = filename.replace(".json", "")
+
+              # 1. JSON 格式验证
+              try:
+                  with open(path, "r", encoding="utf-8") as f:
+                      data = json.load(f)
+              except json.JSONDecodeError as e:
+                  errors.append(f"{filename}: JSON 格式错误 - {e}")
+                  continue
+              except Exception as e:
+                  errors.append(f"{filename}: 读取失败 - {e}")
+                  continue
+
+              # 2. 必填字段
+              if "name" not in data:
+                  errors.append(f"{filename}: 缺少 'name' 字段")
+              if "description" not in data:
+                  errors.append(f"{filename}: 缺少 'description' 字段")
+              if "protocol_map" not in data:
+                  errors.append(f"{filename}: 缺少 'protocol_map' 字段")
+                  continue
+
+              proto_map = data.get("protocol_map", {})
+
+              # 3. 协议覆盖检查
+              missing = [p for p in REQUIRED_PROTOCOLS if p not in proto_map]
+              if missing:
+                  warnings.append(f"{filename}: 缺少协议 - {', '.join(missing)}")
+
+              # 4. 每个协议的字段检查
+              for proto, entry in proto_map.items():
+                  if "name" not in entry:
+                      errors.append(f"{filename}/{proto}: 缺少 'name' 字段")
+                  if "description" not in entry:
+                      errors.append(f"{filename}/{proto}: 缺少 'description' 字段")
+
+                  sensory = entry.get("sensory", {})
+                  if not sensory.get("visual"):
+                      errors.append(f"{filename}/{proto}: sensory.visual 为空")
+                  if not sensory.get("sound"):
+                      errors.append(f"{filename}/{proto}: sensory.sound 为空")
+                  if not sensory.get("mood"):
+                      errors.append(f"{filename}/{proto}: sensory.mood 为空")
+
+                  # 5. lexicon_variants 质量检查
+                  variants = entry.get("lexicon_variants", [])
+                  for i, v in enumerate(variants):
+                      if len(v) < 20:
+                          errors.append(f"{filename}/{proto}/variant[{i}]: 长度不足 20 字 ({len(v)})")
+                      if len(v) > 200:
+                          errors.append(f"{filename}/{proto}/variant[{i}]: 长度超过 200 字 ({len(v)})")
+                      for term in FORBIDDEN_TERMS:
+                          if term in v:
+                              errors.append(f"{filename}/{proto}/variant[{i}]: 包含禁用词 '{term}'")
+
+          # 输出结果
+          print("=" * 60)
+          print("世界观配置验证结果")
+          print("=" * 60)
+
+          if warnings:
+              print(f"\n⚠️  警告 ({len(warnings)} 项):")
+              for w in warnings:
+                  print(f"  - {w}")
+
+          if errors:
+              print(f"\n❌ 错误 ({len(errors)} 项):")
+              for e in errors:
+                  print(f"  - {e}")
+              print(f"\n验证失败，请修复上述错误后重新提交。")
+              sys.exit(1)
+          else:
+              print("\n✅ 所有世界观配置验证通过！")
+              if warnings:
+                  print("(存在警告，但不阻止合并)")
+              sys.exit(0)
+          EOF

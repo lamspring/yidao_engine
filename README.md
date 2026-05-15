@@ -292,6 +292,29 @@ print(info["mean_potential"])           # 平均势能
 
 > *"反者道之动，弱者道之用。"*
 >
+## 如何贡献
+
+易道引擎欢迎社区贡献，尤其是**世界观配置**和**象法语库变体**。
+
+### 贡献世界观
+
+在 `configs/worldviews/` 下创建 JSON 文件即可。我们提供了一键生成文学语库变体的工具：
+
+```bash
+python tools/generate_worldview_lexicon.py --worldview 你的世界观 --variants 5
+```
+
+详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+### 已有社区世界观
+
+| 世界观 | 作者 | 说明 |
+|--------|------|------|
+| [修仙](configs/worldviews/xiuxian.json) | 官方 | 九霄修仙录，宗门派系 |
+| [克苏鲁](configs/worldviews/cthulhu.json) | 官方 | 疯狂与深渊 |
+
+> 欢迎提交你的世界观！PR 会自动通过 CI 检查格式和质量。
+
 ## 联系我们
 
 如有问题、建议或合作意向，欢迎联系：
