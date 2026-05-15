@@ -1,3 +1,5 @@
+# ⚠️ 注意：本 CI 仅执行格式与质量检查，绝不自动合并或自动通过 PR。
+# 所有 PR 必须经过维护者 (@lamspring) 的人工审核后方可合并。
 name: Validate Worldview Configs
 
 on:

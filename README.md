@@ -306,6 +306,8 @@ python tools/generate_worldview_lexicon.py --worldview 你的世界观 --variant
 
 详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
+**⚠️ 所有贡献需经维护者人工审核后方可合并**，CI 仅作格式辅助检查，不自动通过。
+
 ### 已有社区世界观
 
 | 世界观 | 作者 | 说明 |
@@ -313,7 +315,7 @@ python tools/generate_worldview_lexicon.py --worldview 你的世界观 --variant
 | [修仙](configs/worldviews/xiuxian.json) | 官方 | 九霄修仙录，宗门派系 |
 | [克苏鲁](configs/worldviews/cthulhu.json) | 官方 | 疯狂与深渊 |
 
-> 欢迎提交你的世界观！PR 会自动通过 CI 检查格式和质量。
+> 欢迎提交你的世界观！维护者会人工审核每一行内容。
 
 ## 联系我们
 
