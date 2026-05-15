@@ -246,8 +246,21 @@ def call_llm(pkg: str, event, cfg: PipelineConfig):
 def validate(output: str, cfg: PipelineConfig):
     print("\n[5/5] 验证输出...")
     names = [e.name for e in cfg.entities]
+    # Polished 模式下 LLM 会给角色起中文名，加入中文通用称谓作为 fallback
+    names.extend(["父亲", "母亲", "长子", "次子", "幼女", "儿子", "女儿", "姐姐", "哥哥", "弟弟", "妹妹"])
+    if cfg.worldview and cfg.worldview.character_archetypes:
+        for desc in cfg.worldview.character_archetypes.values():
+            if " / " in desc:
+                names.append(desc.split(" / ")[0].strip())
+            if " — " in desc:
+                names.append(desc.split(" — ")[0].strip())
     if cfg.style == "polished":
-        narrative = output.split("### 对应关系")[0] if "### 对应关系" in output else output
+        # 提取正文部分（排除附录），支持多种附录标题格式
+        narrative = output
+        for marker in ["### 对应关系", "### 二、对应关系", "### 附录", "### 映射标注", "### 叙事质量自检", "### 三、叙事质量自检"]:
+            if marker in output:
+                narrative = output.split(marker)[0]
+                break
         checks = validator.validate_polished(output, narrative, names)
     else:
         checks = validator.validate_raw(output, {})

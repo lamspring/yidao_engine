@@ -35,7 +35,11 @@ def validate_polished(output: str, narrative_part: str, member_names: list[str])
     checks.append(("有对应关系标注（附录）", "对应关系" in output or "对应表" in output))
     checks.append(("有质量自检", "自检" in output or "因果链" in output))
     # Route-C v2：检查映射标注中是否有系统概念锚定
-    annotation = output.split("### 对应关系")[-1] if "### 对应关系" in output else ""
+    annotation = ""
+    for marker in ["### 对应关系", "### 二、对应关系", "### 附录", "### 映射标注"]:
+        if marker in output:
+            annotation = output.split(marker)[-1]
+            break
     checks.append(("映射标注中有系统概念锚定", "系统概念" in annotation or "【" in annotation))
     checks.append(("映射标注中有LLM文学映射", "文学映射" in annotation or "LLM" in annotation))
     return checks

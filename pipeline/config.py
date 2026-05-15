@@ -47,15 +47,19 @@ class LLMConfig:
             available = ", ".join(providers.keys())
             raise ValueError(f"未知LLM提供商 '{provider_name}'。可用: {available}")
         p = providers[provider_name]
-        # 从环境变量读取API key
+        # 从环境变量读取API key（支持多个候选，逗号分隔）
         api_key = ""
-        env_var = p.get("api_key_env", "")
-        if env_var:
-            api_key = os.environ.get(env_var, "")
+        env_var_str = p.get("api_key_env", "")
+        env_vars = [ev.strip() for ev in env_var_str.split(",") if ev.strip()]
+        for ev in env_vars:
+            if ev in os.environ:
+                api_key = os.environ[ev]
+                break
         if not api_key and provider_name != "local":
+            env_hint = env_var_str if env_var_str else "对应的环境变量"
             raise ValueError(
-                f"提供商 '{provider_name}' 需要设置环境变量 {env_var}，但当前为空。"
-                f"请执行：export {env_var}=your_key_here (Linux/Mac) 或 set {env_var}=your_key_here (Windows)"
+                f"提供商 '{provider_name}' 需要设置环境变量 {env_hint}，但当前为空。"
+                f"请执行：export {env_hint}=your_key_here (Linux/Mac) 或 set {env_hint}=your_key_here (Windows)"
             )
         return cls(
             base_url=p["base_url"],
