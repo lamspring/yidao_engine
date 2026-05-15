@@ -44,10 +44,27 @@ def format_member_detailed(snap, member_name, worldview=None):
 
     # Route-C v2：注入系统象法语库（8维度 + 文学变体）
     lib = get_protocol_library(snap['body_protocol'])
+
+    # 用户自定义语库变体（优先级高于系统默认）
+    user_variants = []
+    if worldview and snap['body_protocol'] in worldview.protocol_map:
+        user_variants = worldview.protocol_map[snap['body_protocol']].get('lexicon_variants', [])
+
     lit_variants = lib.get('variants', {})
     variant_lines = []
-    for k, v in lit_variants.items():
-        variant_lines.append(f"    [{k}] {v}")
+
+    if user_variants:
+        # 用户自定义变体：根据 phase 确定性选择
+        idx = int(snap['center_phase'] * 100) % len(user_variants)
+        selected = user_variants[idx]
+        variant_lines.append(f"    [用户自定义] {selected}")
+        for i, v in enumerate(user_variants):
+            marker = " ← 当前选中" if i == idx else ""
+            variant_lines.append(f"    [{i}] {v[:60]}{'...' if len(v) > 60 else ''}{marker}")
+    else:
+        for k, v in lit_variants.items():
+            variant_lines.append(f"    [{k}] {v}")
+
     lit_block = "\n".join(variant_lines) if variant_lines else "    （无预设变体）"
 
     # 根据 phase 选择确定性感官词
@@ -66,7 +83,7 @@ def format_member_detailed(snap, member_name, worldview=None):
 势能: {snap['pot_label']} ({snap['pot_atmosphere']})
 感官: 视-{', '.join(sensory['visual'])} | 听-{', '.join(sensory['sound'])} | 动-{', '.join(sensory['motion'])} | 情-{', '.join(sensory['mood'])}
 象法语库（8维）: 视-{_pick(lib['visual'], phase_idx)} | 听-{_pick(lib['sound'], phase_idx)} | 触-{_pick(lib['touch'], phase_idx)} | 嗅-{_pick(lib['smell'], phase_idx)} | 味-{_pick(lib['taste'], phase_idx)} | 情-{_pick(lib['mood'], phase_idx)} |  tempo-{_pick(lib['tempo'], phase_idx)} | 形-{_pick(lib['geometry'], phase_idx)}
-文学变体（可选）:
+文学变体:
 {lit_block}
 """
 
