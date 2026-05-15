@@ -55,9 +55,23 @@ yidao_engine/
 
 ## 快速开始
 
-### 1. 最简运行（五口之家 + 白描风格）
+### 1. 零配置运行（不调用 LLM，纯模拟）
 
 ```bash
+python main.py --no-llm
+```
+
+不需要任何 API Key，立即看到世界模拟结果。输出保存在 `outputs/{时间戳}/timeline_package.txt`，可后续手动发给任意 LLM 生成叙事。
+
+### 2. 调用 LLM 生成叙事（需配置 API Key）
+
+默认使用 **DeepSeek**（国内用户最容易获取）：
+
+```bash
+# 先设置环境变量（DeepSeek）
+export DEEPSEEK_API_KEY="sk-..."      # Linux/macOS
+set DEEPSEEK_API_KEY=sk-...           # Windows
+
 python main.py
 ```
 
@@ -65,10 +79,10 @@ python main.py
 - 模式：`family`（五口之家）
 - 风格：`polished`（白描，正文无系统数据）
 - tick：1500
-- LLM：`mimo-v2.5-pro`
+- LLM：`deepseek-chat`
 - 世界观：通用（无绑定）
 
-### 2. 切换世界观
+### 3. 切换世界观
 
 ```bash
 # 修仙门派史诗
@@ -78,7 +92,7 @@ python main.py --worldview xiuxian
 python main.py --worldview cthulhu
 ```
 
-### 3. 切换 LLM 提供商
+### 4. 切换 LLM 提供商
 
 ```bash
 # OpenAI
@@ -94,17 +108,26 @@ python main.py --provider claude
 python main.py --provider local
 ```
 
-**API Key 设置**：在 `configs/llm_providers.json` 中查看对应的环境变量名，然后：
+**支持的提供商**（在 `configs/llm_providers.json` 中查看完整配置）：
 
+| 提供商 | 环境变量 | 说明 |
+|--------|---------|------|
+| `deepseek` | `DEEPSEEK_API_KEY` | 默认，国内访问友好 |
+| `openai` | `OPENAI_API_KEY` | GPT-4o 系列 |
+| `claude` | `ANTHROPIC_API_KEY` | Claude 3.5 |
+| `mimo` | `MIMO_API_KEY` | 小米内部 API（外部用户不可用） |
+| `local` | 无需 key | 本地 Ollama / vLLM |
+
+设置示例：
 ```bash
 # Linux/macOS
-export OPENAI_API_KEY="sk-..."
+export DEEPSEEK_API_KEY="sk-..."
 
 # Windows
-set OPENAI_API_KEY=sk-...
+set DEEPSEEK_API_KEY=sk-...
 ```
 
-### 4. 切换叙事风格
+### 5. 切换叙事风格
 
 ```bash
 # polished：白描手法，正文零数据引用（推荐用于阅读）
@@ -114,7 +137,7 @@ python main.py --style polished
 python main.py --style raw
 ```
 
-### 5. 离线模式（不调用 LLM）
+### 6. 离线模式（不调用 LLM）
 
 ```bash
 python main.py --no-llm
@@ -122,7 +145,7 @@ python main.py --no-llm
 
 只运行世界模拟并生成语义包，保存到 `outputs/{时间戳}/timeline_package.txt`。等网络恢复后可手动调用 LLM。
 
-### 6. 切换运行模式
+### 7. 切换运行模式
 
 ```bash
 # 单实体连续叙事
@@ -135,7 +158,7 @@ python main.py --mode dual
 python main.py --mode family
 ```
 
-### 7. 完整参数示例
+### 8. 完整参数示例
 
 ```bash
 python main.py \

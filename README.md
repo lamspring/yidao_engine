@@ -21,10 +21,13 @@ LLM 不是在这里"编故事"，而是作为一个**观象者**，观测一个�
 ## 快速开始
 
 ```bash
-# 安装依赖
+# 安装依赖（唯一必需依赖）
 pip install numpy
 
-# 运行一个五口之家的家庭史诗（白描风格）
+# 零配置运行（不调用 LLM，纯模拟 + 生成语义包）
+python main.py --no-llm
+
+# 调用 LLM 生成叙事（默认 DeepSeek，需设置 DEEPSEEK_API_KEY）
 python main.py --mode family --style polished
 
 # 切换到修仙世界观
@@ -37,7 +40,8 @@ python main.py --worldview cthulhu
 python main.py --load my_world --ticks 500
 ```
 
-详见 [QUICKSTART.md](QUICKSTART.md)。
+> **API Key 配置**：默认使用 DeepSeek，需设置环境变量 `DEEPSEEK_API_KEY`。
+> 支持 `openai` / `claude` / `deepseek` / `local`（Ollama），详见 [QUICKSTART.md](QUICKSTART.md)。
 
 ---
 

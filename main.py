@@ -45,7 +45,7 @@ def parse_args():
     p.add_argument("--ticks", type=int, default=1500, help="本次运行新增 tick 数（增量模式）或总 tick 数（全新模式）")
     p.add_argument("--interval", type=int, default=150, help="快照采样间隔")
     # LLM & 世界观
-    p.add_argument("--provider", default="mimo", help="LLM提供商")
+    p.add_argument("--provider", default="deepseek", help="LLM提供商 (deepseek/openai/claude/mimo/local)")
     p.add_argument("--worldview", default=None, help="世界观配置名")
     p.add_argument("--config-dir", default="./configs", help="配置文件目录")
     p.add_argument("--no-llm", action="store_true", help="只运行模拟，不调用LLM")
@@ -75,7 +75,16 @@ def setup_config(args) -> PipelineConfig:
 
     # 加载LLM配置
     try:
-        cfg.llm = LLMConfig.from_provider(args.provider, args.config_dir)
+        try:
+            cfg.llm = LLMConfig.from_provider(args.provider, args.config_dir)
+        except ValueError as e:
+            print(f"[错误] {e}")
+            print("[提示] 你可以：")
+            print("  1. 设置对应的环境变量（如 DEEPSEEK_API_KEY）后重试")
+            print("  2. 换用其他 provider：--provider openai / --provider claude / --provider local")
+            print("  3. 跳过 LLM 调用，只运行模拟：--no-llm")
+            import sys
+            sys.exit(1)
         print(f"[配置] LLM提供商: {args.provider} | 模型: {cfg.llm.model}")
     except Exception as e:
         print(f"[警告] 加载LLM配置失败: {e}，使用默认配置")

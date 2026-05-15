@@ -49,8 +49,14 @@ class LLMConfig:
         p = providers[provider_name]
         # 从环境变量读取API key
         api_key = ""
-        if p.get("api_key_env"):
-            api_key = os.environ.get(p["api_key_env"], "")
+        env_var = p.get("api_key_env", "")
+        if env_var:
+            api_key = os.environ.get(env_var, "")
+        if not api_key and provider_name != "local":
+            raise ValueError(
+                f"提供商 '{provider_name}' 需要设置环境变量 {env_var}，但当前为空。"
+                f"请执行：export {env_var}=your_key_here (Linux/Mac) 或 set {env_var}=your_key_here (Windows)"
+            )
         return cls(
             base_url=p["base_url"],
             api_key=api_key,
