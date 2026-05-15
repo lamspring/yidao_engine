@@ -202,8 +202,8 @@ def build_slices(runner, event, cfg: PipelineConfig):
         return pkg
 
 
-def call_llm(pkg: str, event, cfg: PipelineConfig):
-    print("\n[4/5] 调用 LLM...")
+def build_prompts(pkg: str, event, cfg: PipelineConfig) -> tuple[str, str]:
+    """构建 system_prompt 和 user_prompt（不调用 LLM）"""
     tmpl = prompts.get_prompt(cfg.style, cfg.mode, cfg.worldview)
     system = tmpl["system"]
 
@@ -231,6 +231,12 @@ def call_llm(pkg: str, event, cfg: PipelineConfig):
         appendix = "\n".join(appendix_lines)
         user = tmpl["user"].format(flip_detail=flip_detail, timeline_package=pkg, appendix=appendix)
 
+    return system, user
+
+
+def call_llm(pkg: str, event, cfg: PipelineConfig):
+    print("\n[4/5] 调用 LLM...")
+    system, user = build_prompts(pkg, event, cfg)
     client = LLMClient(cfg.llm)
     output, usage = client.call(system, user)
     print(f"  API 成功 | 输入:{usage.get('prompt_tokens','?')} | 输出:{usage.get('completion_tokens','?')}")
@@ -328,9 +334,18 @@ def main():
         print("\n[跳过LLM] --no-llm 模式")
         out_dir = os.path.join(cfg.output_dir, cfg.run_name)
         _ensure_dir(out_dir)
-        with open(os.path.join(out_dir, "timeline_package.txt"), "w", encoding="utf-8") as f:
-            f.write(pkg)
-        print(f"  语义包已保存到: {out_dir}/timeline_package.txt")
+        # 构建并保存 prompts，方便用户手动调用
+        system, user = build_prompts(pkg, event, cfg)
+        files = {
+            "timeline_package.txt": pkg,
+            "system_prompt.txt": system,
+            "user_prompt.txt": user,
+        }
+        for fname, content in files.items():
+            with open(os.path.join(out_dir, fname), "w", encoding="utf-8") as f:
+                f.write(content)
+        print(f"  语义包 + Prompts 已保存到: {out_dir}/")
+        print(f"  提示: 你可以复制 system_prompt.txt 和 user_prompt.txt 到任意 LLM 平台手动调用")
         return
 
     # 4. LLM
@@ -338,12 +353,21 @@ def main():
         output, system, user = call_llm(pkg, event, cfg)
     except Exception as e:
         print(f"  LLM 调用失败: {e}")
-        print("  保存语义包到本地，等网络恢复后可手动调用...")
+        print("  保存语义包 + Prompts 到本地，等网络恢复后可手动调用...")
         out_dir = os.path.join(cfg.output_dir, cfg.run_name)
         _ensure_dir(out_dir)
-        with open(os.path.join(out_dir, "timeline_package.txt"), "w", encoding="utf-8") as f:
-            f.write(pkg)
-        print(f"  语义包已保存到: {out_dir}/timeline_package.txt")
+        # 即使 LLM 失败，也保存构建好的 prompts
+        system, user = build_prompts(pkg, event, cfg)
+        files = {
+            "timeline_package.txt": pkg,
+            "system_prompt.txt": system,
+            "user_prompt.txt": user,
+        }
+        for fname, content in files.items():
+            with open(os.path.join(out_dir, fname), "w", encoding="utf-8") as f:
+                f.write(content)
+        print(f"  已保存到: {out_dir}/")
+        print(f"  提示: 你可以复制 system_prompt.txt 和 user_prompt.txt 到任意 LLM 平台手动调用")
         return
 
     # 5. 验证
