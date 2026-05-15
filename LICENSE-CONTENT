@@ -1,0 +1,23 @@
+Creative Commons Attribution 4.0 International
+
+本项目的世界观配置与内容部分（包括但不限于 configs/worldviews/*.json、
+configs/llm_providers.json）采用知识共享署名 4.0 国际许可协议（CC BY 4.0）进行许可。
+
+您有权：
+  - 共享 — 在任何媒介或格式下复制、转发本内容
+  - 改编 — 重混、转换、依据本内容进行再创作，包括商业用途
+  - 闭源使用 — 您无需将衍生内容以相同许可协议发布
+
+须遵守的条件：
+  - 署名 — 您必须给出适当的署名，提供许可协议链接，并指明是否做了修改
+
+免责声明：
+  本内容按"原样"提供，不提供任何明示或暗示的担保。
+
+完整法律文本：
+  https://creativecommons.org/licenses/by/4.0/legalcode
+
+中文 deed（非法律文本）：
+  https://creativecommons.org/licenses/by/4.0/deed.zh
+
+Copyright 2024-2025 易道虚拟机引擎贡献者

@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 环境变量（敏感信息）
+.env
+
+# 输出目录
+outputs/
+states/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 临时文件
+*.tmp
+*.log
+
+# 开发备份与内部文档（不应进入公开仓库）
+.backup/
+REVIEW_*.md

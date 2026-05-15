@@ -1,0 +1,17 @@
+易道虚拟机引擎 (Yidao Virtual Machine Engine)
+
+本项目采用多重许可证，不同部分适用不同许可证：
+
+1. 源代码（*.py, pipeline/ 目录下的所有 Python 文件）
+   → Apache License, Version 2.0
+   详见 LICENSE-CODE
+
+2. 文档与协议（AGENTS.md, QUICKSTART.md, README.md, REVIEW*.md 等）
+   → Creative Commons Attribution-ShareAlike 4.0 International
+   详见 LICENSE-DOCS
+
+3. 世界观配置与内容（configs/worldviews/*.json, configs/llm_providers.json）
+   → Creative Commons Attribution 4.0 International
+   详见 LICENSE-CONTENT
+
+各许可证的完整文本见对应文件。
