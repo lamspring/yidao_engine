@@ -22,11 +22,17 @@ from codex import get_gua, get_phase_meaning
 # 0. 八卦相荡关系查表（邻域上下文预计算）
 # ═══════════════════════════════════════════
 
+# ═══════════════════════════════════════════
+# 八卦索引 ↔ 卦值 双向映射
+# ═══════════════════════════════════════════
+# 内部 8×8 矩阵使用 0-7 紧凑索引，外部 API 使用卦值 (0, 9, 18, 27, 36, 45, 54, 63)
 # 八卦索引: 0坤(土) 1震(木) 2坎(水) 3巽(木) 4艮(土) 5离(火) 6兑(金) 7乾(金)
+_TRIGRAM_VALUES = [0, 9, 18, 27, 36, 45, 54, 63]           # index → gua value
+_TRIGRAM_INDEX = {0:0, 9:1, 18:2, 27:3, 36:4, 45:5, 54:6, 63:7}  # gua value → index
 _BAGUA_NAMES = ["坤", "震", "坎", "巽", "艮", "离", "兑", "乾"]
 _BAGUA_WUXING = ["土", "木", "水", "木", "土", "火", "金", "金"]
 
-# 8×8 关系词矩阵（行=焦点卦，列=邻域卦）
+# 8×8 关系词矩阵（行=焦点卦index，列=邻域卦index）
 # 关系源于五行生克、先天通气、先天对冲
 _BAGUA_RELATION_TERMS = [
     # 0 坤(土)
@@ -51,24 +57,27 @@ _BAGUA_RELATION_TERMS = [
 def get_relation_term(trigram_focus: int, trigram_neighbor: int) -> str:
     """
     根据焦点八卦与邻域八卦，返回相荡关系词。
-    trigram: 0-7 的八卦索引
+    接受卦值 (0,9,18,27,36,45,54,63) 或 0-7 索引（兼容旧调用）。
     """
-    tf = int(trigram_focus) & 0b111
-    tn = int(trigram_neighbor) & 0b111
+    tf = _TRIGRAM_INDEX.get(int(trigram_focus) & 0b111111,
+            int(trigram_focus) & 0b111)
+    tn = _TRIGRAM_INDEX.get(int(trigram_neighbor) & 0b111111,
+            int(trigram_neighbor) & 0b111)
     return _BAGUA_RELATION_TERMS[tf][tn]
 
 
 def get_dominant_trigram(gua_region: np.ndarray) -> int:
     """
     从卦象区域中提取主导八卦（上下卦中出现最频繁者）。
-    返回 0-7 的八卦索引。
+    返回卦值 (0,9,18,27,36,45,54,63)，与 codex.py 体系一致。
     """
     if gua_region.size == 0:
         return 0
     upper, lower = split_trigrams(gua_region)
     all_tri = np.concatenate([upper.flatten(), lower.flatten()])
     vals, counts = np.unique(all_tri, return_counts=True)
-    return int(vals[np.argmax(counts)])
+    idx = int(vals[np.argmax(counts)])
+    return _TRIGRAM_VALUES[idx]
 
 
 # ═══════════════════════════════════════════

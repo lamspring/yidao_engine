@@ -23,19 +23,27 @@ def _extract_annotation(output: str) -> str:
 
 
 def validate_raw(output: str, story_data: dict) -> list[tuple[str, bool]]:
-    """验证 raw 风格输出"""
+    """验证 raw 风格输出（阈值收紧：单关键词→多关键词最低命中数）"""
     checks = []
     narrative = _extract_narrative(output)
-    checks.append(("有明确时间流逝感", any(w in narrative for w in ["起初", "后来", "随后", "终于", "之前", "之后", "那一刻"])))
-    checks.append(("有因果逻辑链", any(w in narrative for w in ["因此", "所以", "因为", "于是", "导致", "源于", "终于"])))
-    checks.append(("有伏笔铺垫", any(w in narrative for w in ["伏笔", "潜藏", "压抑", "积蓄", "酝酿", "暗流", "沉默", "潜伏"])))
-    checks.append(("有爆发/高潮", any(w in narrative for w in ["爆发", "崩解", "瓦解", "撕裂", "裂变", "点燃", "引爆", "那一刻"])))
-    checks.append(("有后果/余波", any(w in narrative for w in ["后果", "余波", "残骸", "废墟", "新生", "之后", "从此", "留下"])))
-    checks.append(("卦变有仪式感", any(w in narrative for w in ["宿命", "轰鸣", "自决", "强制", "降临", "产道", "不可逆转", "旧死新生"])))
-    checks.append(("两极并存", sum(1 for w in ["光明", "黑暗", "荣耀", "诅咒", "辉煌", "腐朽", "温暖", "冰冷"] if w in narrative) >= 2))
+    # 叙事弧线：各项至少命中 2 个关键词才算通过
+    time_words = ["起初", "后来", "随后", "终于", "之前", "之后", "那一刻"]
+    checks.append(("有明确时间流逝感（≥2词）", sum(1 for w in time_words if w in narrative) >= 2))
+    cause_words = ["因此", "所以", "因为", "于是", "导致", "源于", "终于"]
+    checks.append(("有因果逻辑链（≥2词）", sum(1 for w in cause_words if w in narrative) >= 2))
+    foreshadow_words = ["伏笔", "潜藏", "压抑", "积蓄", "酝酿", "暗流", "沉默", "潜伏"]
+    checks.append(("有伏笔铺垫（≥2词）", sum(1 for w in foreshadow_words if w in narrative) >= 2))
+    climax_words = ["爆发", "崩解", "瓦解", "撕裂", "裂变", "点燃", "引爆", "那一刻"]
+    checks.append(("有爆发/高潮（≥2词）", sum(1 for w in climax_words if w in narrative) >= 2))
+    aftermath_words = ["后果", "余波", "残骸", "废墟", "新生", "之后", "从此", "留下"]
+    checks.append(("有后果/余波（≥2词）", sum(1 for w in aftermath_words if w in narrative) >= 2))
+    ritual_words = ["宿命", "轰鸣", "自决", "强制", "降临", "产道", "不可逆转", "旧死新生"]
+    checks.append(("卦变有仪式感（≥2词）", sum(1 for w in ritual_words if w in narrative) >= 2))
+    checks.append(("两极并存（≥2词）", sum(1 for w in ["光明", "黑暗", "荣耀", "诅咒", "辉煌", "腐朽", "温暖", "冰冷"] if w in narrative) >= 2))
     checks.append(("有对应表", "对应关系" in output or "|" in output))
     checks.append(("有质量自检", "自检" in output or "因果链" in output))
-    checks.append(("有感官细节", any(w in narrative for w in ["光", "暗", "声", "响", "静", "风", "火", "冷", "热", "味道", "颤抖", "震动"])))
+    sense_words = ["光", "暗", "声", "响", "静", "风", "火", "冷", "热", "味道", "颤抖", "震动"]
+    checks.append(("有感官细节（≥3词）", sum(1 for w in sense_words if w in narrative) >= 3))
     return checks
 
 
@@ -53,7 +61,7 @@ def validate_polished(output: str, narrative_part: str, member_names: list[str])
     has_dialogue = bool(re.search(r'[。\s]"[^"]{3,50}"[。，\s]', narrative)) or \
                    bool(re.search(r'[。\s][""""][^""""]{3,50}[""""][。，\s]', narrative))
     checks.append(("有对话描写", has_dialogue))
-    checks.append(("有动作描写", any(w in narrative for w in ["撕", "画", "写", "走", "站", "坐", "推", "拉", "锁", "开", "放", "拿"])))
+    checks.append(("有动作描写（≥3种）", sum(1 for w in ["撕", "画", "写", "走", "站", "坐", "推", "拉", "锁", "开", "放", "拿", "端", "放", "递", "握"] if w in narrative) >= 3))
     checks.append(("至少有3个角色名出现", sum(1 for name in member_names if name in narrative) >= 3))
     checks.append(("有家庭/互动氛围", any(w in output for w in ["父亲", "母亲", "家", "家里", "家人", "争吵", "拥抱", "沉默", "对视"])))
     checks.append(("有对应关系标注（附录）", "对应关系" in output or "对应表" in output))

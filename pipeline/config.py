@@ -36,8 +36,8 @@ class LLMConfig:
     max_retries: int = 2
 
     @classmethod
-    def from_provider(cls, provider_name: str, config_dir: str = "./configs") -> "LLMConfig":
-        """从配置文件加载LLM提供商配置"""
+    def from_provider(cls, provider_name: str, config_dir: str = "./configs", api_key: str | None = None) -> "LLMConfig":
+        """从配置文件加载LLM提供商配置。api_key 可传入以覆盖环境变量。"""
         providers_path = os.path.join(config_dir, "llm_providers.json")
         if not os.path.exists(providers_path):
             raise FileNotFoundError(f"LLM提供商配置文件不存在: {providers_path}")
@@ -47,23 +47,24 @@ class LLMConfig:
             available = ", ".join(providers.keys())
             raise ValueError(f"未知LLM提供商 '{provider_name}'。可用: {available}")
         p = providers[provider_name]
-        # 从环境变量读取API key（支持多个候选，逗号分隔）
-        api_key = ""
-        env_var_str = p.get("api_key_env", "")
-        env_vars = [ev.strip() for ev in env_var_str.split(",") if ev.strip()]
-        for ev in env_vars:
-            if ev in os.environ:
-                api_key = os.environ[ev]
-                break
-        if not api_key and provider_name != "local":
-            env_hint = env_var_str if env_var_str else "对应的环境变量"
+        # 优先使用传入的 api_key，其次从环境变量读取（支持多个候选，逗号分隔）
+        resolved_key = api_key or ""
+        if not resolved_key:
+            env_var_str = p.get("api_key_env", "")
+            env_vars = [ev.strip() for ev in env_var_str.split(",") if ev.strip()]
+            for ev in env_vars:
+                if ev in os.environ:
+                    resolved_key = os.environ[ev]
+                    break
+        if not resolved_key and provider_name != "local":
+            env_hint = p.get("api_key_env", "对应的环境变量")
             raise ValueError(
                 f"提供商 '{provider_name}' 需要设置环境变量 {env_hint}，但当前为空。"
                 f"请执行：export {env_hint}=your_key_here (Linux/Mac) 或 set {env_hint}=your_key_here (Windows)"
             )
         return cls(
             base_url=p["base_url"],
-            api_key=api_key,
+            api_key=resolved_key,
             model=p.get("default_model", ""),
             temperature=p.get("temperature", 0.75),
             max_tokens=p.get("max_tokens", 5000),

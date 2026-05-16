@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>易道推演</title>
+    <link rel="stylesheet" href="{{styleUri}}">
+</head>
+<body>
+    <div id="app">
+        <!-- 配置面板 -->
+        <div class="config-panel" id="config-panel">
+            <div class="config-header" id="config-toggle">
+                <span>⚙️ 推演配置</span>
+                <span class="toggle-icon">▼</span>
+            </div>
+            <div class="config-body" id="config-body">
+                <div class="config-row">
+                    <div class="config-item">
+                        <label>大模型</label>
+                        <select id="cfg-provider">
+                            <option value="deepseek">DeepSeek V3</option>
+                            <option value="openai">OpenAI GPT-4o</option>
+                            <option value="claude">Claude 3.5</option>
+                            <option value="kimi">Kimi</option>
+                            <option value="mimo">Mimo v2.5 Pro</option>
+                            <option value="local">Local (Ollama)</option>
+                        </select>
+                    </div>
+                    <div class="config-item wide">
+                        <label>API Key <small>(留空则使用环境变量)</small></label>
+                        <div class="password-wrap">
+                            <input type="password" id="cfg-apikey" placeholder="sk-...">
+                            <button type="button" id="btn-toggle-key">👁</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="config-row">
+                    <div class="config-item">
+                        <label>世界观</label>
+                        <select id="cfg-worldview">
+                            <option value="">默认</option>
+                            <option value="xiuxian">修仙</option>
+                            <option value="cthulhu">克苏鲁</option>
+                        </select>
+                    </div>
+                    <div class="config-item">
+                        <label>推演模式</label>
+                        <select id="cfg-mode">
+                            <option value="family">family (六爻家庭)</option>
+                            <option value="dual">dual (双人)</option>
+                            <option value="single">single (单人)</option>
+                        </select>
+                    </div>
+                    <div class="config-item">
+                        <label>文风</label>
+                        <select id="cfg-style">
+                            <option value="polished">润色 (polished)</option>
+                            <option value="raw">原始 (raw)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="config-row">
+                    <button id="btn-apply-config" class="primary">应用配置并重新初始化</button>
+                    <span id="cfg-status" class="cfg-status"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 顶部状态栏 -->
+        <div class="status-bar">
+            <div class="status-item">
+                <span class="label">Tick</span>
+                <span id="status-tick" class="value">0</span>
+            </div>
+            <div class="status-item">
+                <span class="label">聚焦</span>
+                <span id="status-focus" class="value">family</span>
+            </div>
+            <div class="status-item">
+                <span class="label">变体</span>
+                <span id="status-variant" class="value">无</span>
+            </div>
+            <div class="status-item">
+                <span class="label">幕数</span>
+                <span id="status-narratives" class="value">0</span>
+            </div>
+            <div class="status-item">
+                <span class="label">Tokens</span>
+                <span id="status-tokens" class="value">0</span>
+            </div>
+        </div>
+
+        <!-- 实体状态表格 -->
+        <div class="entities-section">
+            <h3>实体状态</h3>
+            <table id="entities-table">
+                <thead>
+                    <tr>
+                        <th>实体</th>
+                        <th>卦</th>
+                        <th>协议</th>
+                        <th>相位</th>
+                        <th>势能</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <!-- 控制面板 -->
+        <div class="control-panel">
+            <div class="control-row">
+                <div class="input-group">
+                    <label>推进 ticks</label>
+                    <input type="number" id="step-ticks" value="150" min="50" step="10">
+                    <button id="btn-step">推进</button>
+                </div>
+                <div class="button-group">
+                    <button id="btn-explain" class="primary">解释此幕</button>
+                    <button id="btn-reroll">重新生成</button>
+                    <button id="btn-reset">重置世界</button>
+                </div>
+            </div>
+
+            <div class="control-row">
+                <div class="input-group">
+                    <label>聚焦</label>
+                    <select id="select-focus">
+                        <option value="family">family (全家)</option>
+                        <option value="father">father (父亲)</option>
+                        <option value="mother">mother (母亲)</option>
+                        <option value="eldest">eldest (长子)</option>
+                        <option value="second">second (次子)</option>
+                        <option value="youngest">youngest (幼女)</option>
+                    </select>
+                    <button id="btn-focus">设置</button>
+                </div>
+                <div class="input-group">
+                    <label>变体锁定</label>
+                    <select id="select-variant">
+                        <option value="">无</option>
+                        <option value="dao">dao (道家)</option>
+                        <option value="scifi">scifi (科幻)</option>
+                        <option value="myth">myth (神话)</option>
+                        <option value="exist">exist (存在主义)</option>
+                    </select>
+                    <button id="btn-variant">锁定</button>
+                </div>
+            </div>
+
+            <div class="control-row">
+                <div class="input-group">
+                    <label>保存/加载</label>
+                    <input type="text" id="session-name" placeholder="会话名称" value="my_session">
+                    <button id="btn-save">保存</button>
+                    <button id="btn-load">加载</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 日志输出 -->
+        <div class="log-section">
+            <h3>操作日志</h3>
+            <div id="log-output" class="log-box"></div>
+        </div>
+
+        <!-- 叙事输出 -->
+        <div class="narrative-section">
+            <h3>叙事输出</h3>
+            <div id="narrative-output" class="narrative-box"></div>
+        </div>
+    </div>
+
+    <script src="{{scriptUri}}"></script>
+</body>
+</html>

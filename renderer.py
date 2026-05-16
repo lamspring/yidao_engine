@@ -448,7 +448,6 @@ def get_sensory_packet(protocol: str, phase: float = 0.5) -> dict:
     phase 影响感官的'成熟度'——初爻期偏原始，上爻期偏极端。
     """
     lib = get_protocol_library(protocol)
-    import random
     # 确定性选择（避免随机）：用 phase 做索引选择
     def _pick(items, idx):
         if not items:
