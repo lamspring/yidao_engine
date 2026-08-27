@@ -10,7 +10,7 @@ yidao_core 不变量测试套件 —— "逻辑严密"不是感觉，是每次�
   3. 点化：观测者点击 (y,x)，该处诞生一点灵。
   4. 确定性：同种子两次运行，世界与众灵状态逐字节一致。
   5. 有界性：所有场有限、非负；草 ∈ [0,1]；人口有上限；记忆有容量。
-  6. 水量闭环：水 + 云 + 九泉的总量长期漂移有界（不涝不涸）。
+  6. 守恒（宇宙底座第一律）：水文 Δ = 越界账A；能量 Δ = 泵 − 草汲 + 越界账B。
   7. 天道守道不救生：健康世界里天道沉默；炁场死寂时唯再动一念；众生灭绝不出手。
   8. 世界是活的：短程运行内有多种显著事件自然发生。
   9. 世界无史：世界对象不携带随时间无限增长的历史结构。
@@ -46,7 +46,8 @@ def 众灵指纹(session):
 
 def 世界指纹(session):
     w = session.world
-    return tuple(np.asarray(a).tobytes() for a in (w.height, w.water, w.cloud, w.grass))
+    return tuple(np.asarray(a).tobytes()
+                 for a in (w.height, w.water, w.cloud, w.grass, w.qi.yin, w.qi.yang))
 
 
 # ── 1. 太初自生 ──────────────────────────────
@@ -106,7 +107,8 @@ def test_determinism():
 def test_long_run():
     log = []
     s = Session.genesis(seed=2026, on_event=lambda **kw: log.append(kw))
-    水量初 = float(s.world.water.sum() + s.world.cloud.sum())
+    水量初 = s.world.水总量A(s.spirits)
+    能量初 = s.world.能量总量B(s.spirits)
     s.run(TICKS_PER_DAY * 30)
     w = s.world
 
@@ -120,10 +122,21 @@ def test_long_run():
        f"最多 {max(len(x.memories) for x in s.spirits)} 条")
     ok("有界·众灵数值正常", all(-1e-6 <= x.yang <= 100.1 and 0 <= x.pressure <= 1.01
                                 for x in s.spirits))
+    ok("有界·炁场非负", float(w.qi.yin.min()) >= 0 and float(w.qi.yang.min()) >= 0,
+       f"炁 {w.qi.总量():.0f}")
 
-    水量末 = float(w.water.sum() + w.cloud.sum() + w._深潭)
-    漂移 = abs(水量末 - 水量初) / max(水量初, 1e-9)
-    ok("水量闭环·漂移有界", 漂移 < 0.5, f"漂移 {漂移:.1%}（初 {水量初:.0f} → 末 {水量末:.0f}）")
+    # 宇宙底座第一律：总量守恒，唯越界可破，越界必留痕
+    # A 域（水文：场水+云+九泉+体水+罐水）：Δ 必须严格等于越界账（云散排气/天道注云）
+    水量末 = w.水总量A(s.spirits)
+    差A = abs(水量末 - 水量初 - w.账.越界A)
+    ok("守恒·水文严格守恒±越界账", 差A < 1e-6 * max(水量初, 1.0),
+       f"Δ {水量末 - 水量初:+.1f} = 越界账 {w.账.越界A:+.1f}（差 {差A:.2e}）")
+    # B 域（能量）：Δ(炁+灵阳+兽阳) 必须严格等于 泵 − 草汲 + 越界账
+    能量末 = w.能量总量B(s.spirits)
+    应 = w.账.泵 - w.账.草汲 + w.账.越界B
+    差B = abs(能量末 - 能量初 - 应)
+    ok("守恒·能量严格守恒±泵与越界账", 差B < 1e-6 * max(能量初, 1.0),
+       f"Δ {能量末 - 能量初:+.1f} = 泵 {w.账.泵:.1f} − 草汲 {w.账.草汲:.1f} + 越界 {w.账.越界B:+.1f}（差 {差B:.2e}）")
 
     kinds = {e["kind"] for e in log}
     天道 = sum(1 for e in log if e["kind"] == "天道")

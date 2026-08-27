@@ -76,8 +76,11 @@ class Tiandao:
         # 众生自有生死，世界自有代谢。道在，一切自会再来。
 
     def stir(self):
-        """再动一念：向炁场注入一缕涨落（用世界自身的随机流，确定性不破）。"""
+        """再动一念：向炁场注入一缕涨落（用世界自身的随机流，确定性不破）。
+        此乃越界注入——宇宙总量唯越界可破，越界必留痕：记越界账。"""
         w = self.world
         n = w.size
-        w.cloud += w._rng.uniform(0.0, 0.3, (n, n))
+        注 = w._rng.uniform(0.0, 0.3, (n, n))
+        w.cloud += 注
+        w.账.越界A += float(注.sum())
         w.wind_speed = float(w._rng.uniform(0.1, 0.4))

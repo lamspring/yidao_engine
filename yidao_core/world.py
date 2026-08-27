@@ -19,6 +19,11 @@ from dataclasses import dataclass, field
 import math
 import numpy as np
 
+try:
+    from .qi import 炁场, 账, 封顶结算, FORM_YIN, BEAST_FORM_YIN, QI_GRASS_DRINK
+except ImportError:  # 允许脚本方式直跑
+    from qi import 炁场, 账, 封顶结算, FORM_YIN, BEAST_FORM_YIN, QI_GRASS_DRINK
+
 # ───────────────────────────────────────────
 # 0. 时间、格局与日月（阴阳总源）
 # ───────────────────────────────────────────
@@ -63,7 +68,8 @@ EVAPORATE = 0.035       # 水每念蒸发基率（风加速之，寒缓之）
 CLOUD_RAIN_AT = 1.0     # 云量超过此值方有雨意
 RAIN_RATE = 0.80        # 成雨时每念降水量（暴雨倾盆，一场把云打薄）
 SEEP = 0.0025           # 渗漏：水每念渗入土的基率（土燥则速，土润则缓）
-SPRING_TOTAL = 0.5      # 九泉每念涌泉的总量上限（分摊于最低洼一成之地）
+SPRING_PRESSURE = 0.002 # 涌泉：每念涌出九泉存量的比例（潭愈满，泉愈涌，闭环之回流）
+SPRING_TOTAL = 0.5      # （已废）旧涌泉每念总量上限——v7 起改为与九泉之压相称
 CLOUD_DECAY = 0.9999    # 云气每念自然散逸（极慢——唯一的漏水口，防的是永涝）
 WIND_WALK = 0.05        # 风向随机游走步长（弧度/念）
 WIND_SPEED_WALK = 0.03  # 风力起伏步长
@@ -133,11 +139,15 @@ FIRE_FEED = 25.0        # 添一份木柴所续之阳
 WELL_YANG0 = 70.0       # 井落成时的阳存量（石土之质，缓于茅屋）
 WELL_DECAY = 0.012      # 井壁每念阳逸散
 WELL_RAIN_SILT = 0.05   # 雨携泥淤井
-WELL_DRAW = 0.35        # 每汲一次，九泉微量扣减（与世界水文闭环挂钩）
 WELL_SILT_AT = 25.0     # 井阳低于此值则淤塞，汲不得水，须淘浚
 WELL_DRY_DEEP = 6.0     # 九泉存量低于此值，井水暂枯（打不出水）
 WELL_DIG_TICKS = 16     # 凿井连续施工念数
 WELL_MARK_TTL = 3 * TICKS_PER_DAY  # 井骸印记保质期
+
+# 体水汇率：身体之水 1 点 = 场水 0.004（水过身体，只是转移，总量不变）
+# 饮于泽、汲于井、灌于罐、汗溺之排、亡故之还——皆按此率在域内结算
+BODY2FIELD = 0.004
+DRINK_KEEP = 0.2        # 饮留水皮：饮水至多汲至场水余此值（泽不为一人而涸）
 
 PATH_AT = 26.0          # 同一格被踩踏次数过此成"径"
 PATH_DECAY = 0.012      # 径每念荒芜（久无人走则消失）
@@ -358,6 +368,11 @@ class World:
         self._cloud_oy = 0.0
         self._深潭 = 0.0                   # 九泉：渗入土中之水的归处（闭环守恒的一库）
 
+        # 炁场与守恒账（宇宙底座第一律，见 qi.py）：常驻能量场，处处皆满；
+        # 逸散就地归还、凝聚就地抽取；四笔流水，笔笔有出处。
+        self.qi = 炁场(size)
+        self.账 = 账()
+
         # 天气状态（供灵体层查询：此刻我头顶在下雨吗）
         self.rain_mask = np.zeros((size, size), dtype=bool)
         self.rain_episodes = 0            # 成雨场次（无雨→有雨的跳变计数）
@@ -378,6 +393,10 @@ class World:
             for _ in range(数):
                 y, x = int(self._rng.integers(0, size)), int(self._rng.integers(0, size))
                 p = BEASTS[种类]
+                # 创世兽群亦自炁凝聚：初阳与形阴自炁场抽取（与众生同一来去）
+                实阳, 实阴 = self.qi.抽取(y, x, 阳=p["阳"],
+                                          阴=BEAST_FORM_YIN.get(种类, 10.0))
+                self.账.越界B += (p["阳"] - 实阳) + (BEAST_FORM_YIN.get(种类, 10.0) - 实阴)
                 self.animals.append(Animal(种类, y, x, p["阳"], 产物念=int(self._rng.integers(0, 64))))
 
         # 预流：让世界先静转两日，风云水草各归其位
@@ -388,6 +407,7 @@ class World:
         self.rain_episodes = 0
         self._events = []
         self._pheno_done = set()
+        self.账.归零()      # 预流期间的流水不入账——账本与念时同起点
 
     # ───────────────────────────────────────
     # 一、物理推进（世界自行运转，不问角色）
@@ -438,7 +458,11 @@ class World:
         blur = (np.roll(self.cloud, 1, 0) + np.roll(self.cloud, -1, 0)
                 + np.roll(self.cloud, 1, 1) + np.roll(self.cloud, -1, 1)) / 4.0
         # 扩散宜弱：云须能在水泽上空积出局部厚云，雨才有地方性
-        self.cloud = (self.cloud * 0.98 + blur * 0.02) * CLOUD_DECAY
+        # 云气散逸：按宇宙底座第一律记越界出账（散于宇宙之外的唯一排气口，防的是永涝）
+        混 = self.cloud * 0.98 + blur * 0.02
+        散 = 混 * (1.0 - CLOUD_DECAY)
+        self.cloud = 混 - 散
+        self.账.越界A -= float(散.sum())
 
         # 雨：云厚积处概率性成雨——概率随超阈云量平方增长，
         # 薄云难雨、厚云倾盆，雨因此成"场"，而非日日均匀的毛毛雨
@@ -459,9 +483,11 @@ class World:
             self._was_raining = False
             self._rain_end = t
 
-        # 水往低处流：每念向更低的邻居让出一部分（八邻，快照式结算）
+        # 水往低处流：每念向更低的邻居让出一部分（八邻，快照式结算）。
+        # 守恒结算（封顶结算）：承诺的总出流不得超过该格实有——
+        # 多方向承诺超出的部分按比例压缩，能量不生不灭（修水流复制之漏）。
         level = self.height + self.water
-        delta = np.zeros_like(self.water)
+        flows = []
         for dy in (-1, 0, 1):
             for dx in (-1, 0, 1):
                 if dy == 0 and dx == 0:
@@ -473,9 +499,8 @@ class World:
                 diff = level[sy, sx] - level[ty, tx]
                 f = np.clip((diff - 0.02) * 0.16, 0.0, None)
                 f = np.minimum(f, self.water[sy, sx] * 0.2)
-                delta[sy, sx] -= f
-                delta[ty, tx] += f
-        self.water = np.maximum(self.water + delta, 0.0)
+                flows.append((sy, sx, ty, tx, f))
+        self.water = np.maximum(self.water + 封顶结算(self.water, flows), 0.0)
 
         # 渗漏与九泉：水渗入土，归于九泉（阴）；九泉满则低洼处涌泉，涸则止。
         # 水 → 云 → 雨 → 水 → 土 → 九泉 → 泉 —— 闭环守恒，世界因此不涝不涸
@@ -483,13 +508,17 @@ class World:
         self.water -= 渗
         self._深潭 += float(渗.sum())
         if self._深潭 > 0.0:
-            # 泉生于谷畔，不注深潭：涌向低而尚干的土地，不成则在潭中蛰伏
+            # 泉生于谷畔，不注深潭：涌向低而尚干的土地，不成则在潭中蛰伏。
+            # 涌泉之量与九泉之压相称（潭愈满，泉愈涌），且不得漫过洼地之容——
+            # 渗漏是慢管、涌泉是压管，地表既不涸亦不涝，闭环才真的转得动。
             低洼 = (self.height <= np.percentile(self.height, 15)) & (self.water < 1.0)
             泉数 = int(低洼.sum())
             if 泉数:
-                涌 = min(self._深潭, SPRING_TOTAL)
-                self.water[低洼] += 涌 / 泉数
-                self._深潭 -= 涌
+                可容 = float(np.sum(1.0 - self.water[低洼]))
+                涌 = min(self._深潭, self._深潭 * SPRING_PRESSURE, 可容)
+                if 涌 > 0.0:
+                    self.water[低洼] += 涌 / 泉数
+                    self._深潭 -= 涌
 
         # 湿度：近期水量的平滑记忆（世界唯一的"记性"，亦只是场的惯性）
         inst = np.clip(self.water / 1.5, 0.0, 1.0)
@@ -501,6 +530,11 @@ class World:
         温生 = float(np.clip(温均 / 18.0, 0.2, 1.3))
         suit = np.clip(1.0 - np.abs(self.moisture - GRASS_SUIT_CENTER) / GRASS_SUIT_WIDTH, 0.0, 1.0)
         self.grass += GRASS_GROW * 温生 * suit * (1.0 - self.grass)
+        # 草汲炁（逸散即播种）：场中之阳养草木——众生沿途归还之能量，经场转手喂给后来者
+        汲 = np.minimum(self.qi.yang, QI_GRASS_DRINK) * 温生 * suit * (1.0 - self.grass)
+        self.qi.yang -= 汲
+        self.grass += 汲 * 0.5
+        self.账.草汲 += float(汲.sum())
         self.grass[self.water > GRASS_FLOOD] -= 0.05
         self.grass[self.moisture < GRASS_DRY] -= 0.008
         np.clip(self.grass, 0.0, 1.0, out=self.grass)
@@ -667,13 +701,17 @@ class World:
         rng = self._rng
         for a in list(self.animals):
             p = BEASTS[a.种类]
-            a.阳 -= p["逸散"]
+            扣 = min(a.阳, p["逸散"])          # 阳之逸散：就地归还炁场（洒水壶，走到哪撒到哪）
+            a.阳 -= 扣
+            self.qi.归还(a.y, a.x, 阳=扣)
             a.年龄 += 1
             a.产物念 = max(0, a.产物念 - 1)
 
-            # 衰老病死：阳尽则亡，尸骸归土
+            # 衰老病死：阳尽则亡，余阳与形阴尽数归还（倾覆）；尸骸归土
             if a.阳 <= 0 or a.年龄 > p["寿命"] * rng.uniform(0.9, 1.1):
                 self.animals.remove(a)
+                self.qi.归还(a.y, a.x, 阳=max(0.0, a.阳),
+                             阴=BEAST_FORM_YIN.get(a.种类, 10.0))
                 肉, 骨 = {"鸡": (2, 1), "羊": (4, 2), "牛": (6, 3)}[a.种类]
                 self.carrions.append(Carrion(a.y, a.x, 肉, 骨, 名=a.种类))
                 if a.驯主:
@@ -746,11 +784,18 @@ class World:
                     if x.阳 < p["阳"] * 0.6 or y.阳 < p["阳"] * 0.6:
                         continue
                     if rng.random() < BREED_CHANCE:
-                        self.animals.append(Animal(x.种类, x.y, x.x, p["阳"] * 0.5))
+                        # 繁衍亦凝聚：新生之阳与形阴自炁场抽取，不足则记越界
+                        阳初 = p["阳"] * 0.5
+                        形阴 = BEAST_FORM_YIN.get(x.种类, 10.0)
+                        实阳, 实阴 = self.qi.抽取(x.y, x.x, 阳=阳初, 阴=形阴)
+                        self.账.越界B += (阳初 - 实阳) + (形阴 - 实阴)
+                        self.animals.append(Animal(x.种类, x.y, x.x, 阳初))
                         break
 
     def _兽食(self, a: Animal, p: dict):
-        """兽食其食：鸡啄虫，羊牛啮草。鸡所过处，虫灾自减。"""
+        """兽食其食：鸡啄虫，羊牛啮草。鸡所过处，虫灾自减。
+        食入之阳来自生物质——记日月之泵（太阳能经草木鱼虫入链）。"""
+        旧 = a.阳
         if p["食"] == "虫":
             if self.insects[a.y, a.x] > 0.3:
                 self.insects[a.y, a.x] -= 0.3
@@ -759,6 +804,7 @@ class World:
             if self.grass[a.y, a.x] > 0.25:
                 self.grass[a.y, a.x] -= 0.2
                 a.阳 = min(p["阳"], a.阳 + 5.0)
+        self.账.泵 += a.阳 - 旧
 
     # ───────────────────────────────────────
     # 三、天道用的最小干预接口（只修世界层）
@@ -805,16 +851,64 @@ class World:
                 return w
         return None
 
-    def 汲井(self, well: Well) -> str:
-        """从井里打一水。井水取自九泉：每汲一次，九泉微量扣减。
+    def 汲井(self, well: Well, 需: float = 0.0) -> str:
+        """从井里打水。井水取自九泉：身体所需之水自九泉转入身体（域内转移）。
         返回 "活"（得饮）/ "淤"（淤塞须淘）/ "枯"（九泉暂涸）。"""
         if well.状态 == "淤":
             return "淤"
         if self._深潭 < WELL_DRY_DEEP:
             return "枯"
-        self._深潭 -= WELL_DRAW
+        取 = min(需, self._深潭 - WELL_DRY_DEEP + 0.001)
+        self._深潭 -= max(0.0, 取)      # 九泉之水入灵之口——域内转移，不入越界账
         well.阳 -= 0.3      # 汲用亦损井
         return "活"
+
+    # ── 守恒接口（宇宙底座第一律的入账/归账/总量）──
+
+    def 生灵入账(self, s):
+        """凝聚成形：新灵之初阳与形阴自炁场抽取（阴向之收敛），不足则记越界；
+        初生之躯所含之水，自当地场水（不足则九泉）转入身体——水过身体，总量不变。"""
+        实阳, 实阴 = self.qi.抽取(s.y, s.x, 阳=s.yang, 阴=FORM_YIN)
+        self.账.越界B += (s.yang - 实阳) + (FORM_YIN - 实阴)
+        需 = s.水分 * BODY2FIELD
+        取 = min(需, float(self.water[s.y, s.x]))
+        self.water[s.y, s.x] -= 取
+        欠 = 需 - 取
+        if 欠 > 0.0:
+            引 = min(self._深潭, 欠)
+            self._深潭 -= 引
+            欠 -= 引
+        if 欠 > 0.0:
+            self.账.越界A += 欠      # 四野滴水全无，唯越界补之（殆不曾见）
+
+    def 生灵归账(self, y: int, x: int, 阳余: float, 水分余: float = 0.0):
+        """坏灭倾覆：余阳与形阴尽数归还炁场；躯中残水就地还场——
+        形成、存在、消亡、回归，四步两清。"""
+        self.qi.归还(y, x, 阳=max(0.0, 阳余), 阴=FORM_YIN)
+        if 水分余 > 0.0:
+            self.water[y, x] += 水分余 * BODY2FIELD
+
+    def 能量总量B(self, spirits: list) -> float:
+        """B 域（能量）总量：炁场 + Σ(灵阳+灵形阴) + Σ(兽阳+兽形阴)。
+        形阴是生灵之形的阴量：生时自炁抽取、死时尽数归还，故生者在账。
+        C 域（生物质与器物）暂不入账。"""
+        return (self.qi.总量()
+                + sum(s.yang + (FORM_YIN if s.alive else 0.0) for s in spirits)
+                + sum(a.阳 + BEAST_FORM_YIN.get(a.种类, 10.0) for a in self.animals))
+
+    def 水总量A(self, spirits: list) -> float:
+        """A 域（水文）总量：场水 + 云 + 九泉 + Σ活灵体水 + Σ罐中盛水。
+        身体里的水、罐里的水，都只是"转移了地方"的水——从未离开宇宙。"""
+        体水 = sum(s.水分 for s in spirits if s.alive)
+        罐水 = 0.0
+        for s in spirits:
+            罐水 += sum(it.盛水 for it in s.bag)
+        for b in self.buildings:
+            罐水 += sum(it.盛水 for it in b.仓储)
+        for r in self.relics:
+            罐水 += sum(it.盛水 for it in r["物"])
+        return (float(self.water.sum() + self.cloud.sum() + self._深潭)
+                + (体水 + 罐水) * BODY2FIELD)
 
     def add_building(self, y: int, x: int, 主人: str) -> Building:
         b = Building(y, x, 主人)
@@ -863,7 +957,8 @@ class World:
         """数值健康检查：全场不得出现 NaN/Inf。"""
         return (np.isfinite(self.water).all() and np.isfinite(self.grass).all()
                 and np.isfinite(self.moisture).all() and np.isfinite(self.height).all()
-                and np.isfinite(self.cloud).all() and np.isfinite(self.temp).all())
+                and np.isfinite(self.cloud).all() and np.isfinite(self.temp).all()
+                and np.isfinite(self.qi.yin).all() and np.isfinite(self.qi.yang).all())
 
     def heal_numbers(self):
         """数值异常时的最小修复（抚平，不改趋势）。"""
@@ -872,3 +967,5 @@ class World:
         np.nan_to_num(self.moisture, copy=False, nan=0.0, posinf=1.0, neginf=0.0)
         np.nan_to_num(self.cloud, copy=False, nan=0.0, posinf=5.0, neginf=0.0)
         np.nan_to_num(self.temp, copy=False, nan=10.0, posinf=50.0, neginf=-30.0)
+        np.nan_to_num(self.qi.yin, copy=False, nan=40.0, posinf=1e6, neginf=0.0)
+        np.nan_to_num(self.qi.yang, copy=False, nan=40.0, posinf=1e6, neginf=0.0)

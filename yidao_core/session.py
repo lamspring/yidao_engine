@@ -68,8 +68,11 @@ class Session:
             else:
                 y, x = size // 2, size // 2
             # 凝聚之处的水土写入初代 DNA：河边生者善渔，高燥多材者善营造
-            ss.append(Spirit(名池[i % len(名池)], y, x, 0, rng,
-                             env=环境印记(world, y, x)))
+            s = Spirit(名池[i % len(名池)], y, x, 0, rng,
+                       env=环境印记(world, y, x))
+            s._世界 = world
+            world.生灵入账(s)     # 太初众灵亦自炁凝聚：初阳与形阴自炁场抽取
+            ss.append(s)
         session = cls(world, ss, seed, on_event)
         session._名池 = 名池
         return session
@@ -92,6 +95,8 @@ class Session:
         name = 新名(self.spirits, self.rng)
         s = Spirit(name, y, x, self.world.tick, self.rng,
                    env=环境印记(self.world, y, x))
+        s._世界 = self.world
+        self.world.生灵入账(s)      # 点化亦凝聚：初阳与形阴自炁场抽取，不足记越界
         self.spirits.append(s)
         self._emit(self.world.tick, (y, x),
                    f"【点化】观测者一点阳种落入，{name} 凝聚成形（因：观测者点化+阴凝聚得阳）",
@@ -137,8 +142,11 @@ class Session:
                 name = self._名池[len(self.spirits) % len(self._名池)]
                 if any(s.name == name for s in self.spirits):
                     name = f"{name}·{len(self.spirits)}"
-                self.spirits.append(Spirit(name, y, x, tick, self.rng,
-                                           env=环境印记(world, y, x)))
+                s = Spirit(name, y, x, tick, self.rng,
+                           env=环境印记(world, y, x))
+                s._世界 = world
+                world.生灵入账(s)      # 自然凝聚：初阳与形阴自炁场抽取
+                self.spirits.append(s)
                 self._emit(tick, (y, x),
                            f"【生】{name} 于丰饶水泽边凝聚成形（因：阴凝聚得阳）",
                            kind="出生", actor=name)

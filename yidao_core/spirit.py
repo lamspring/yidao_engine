@@ -44,11 +44,13 @@ from dataclasses import dataclass
 try:
     from .world import (World, Farm, Carrion, Fence, Fireplace, Item, Well,
                         TICKS_PER_DAY, is_night, FROST_AT, FIRE_FEED, BEASTS,
-                        WELL_DIG_TICKS, PATH_AT, PATH_COST)
+                        WELL_DIG_TICKS, PATH_AT, PATH_COST, BODY2FIELD, DRINK_KEEP)
+    from .qi import BEAST_FORM_YIN
 except ImportError:  # 允许 v6/fishbowl.py 以脚本方式直跑
     from world import (World, Farm, Carrion, Fence, Fireplace, Item, Well,
                        TICKS_PER_DAY, is_night, FROST_AT, FIRE_FEED, BEASTS,
-                       WELL_DIG_TICKS, PATH_AT, PATH_COST)
+                       WELL_DIG_TICKS, PATH_AT, PATH_COST, BODY2FIELD, DRINK_KEEP)
+    from qi import BEAST_FORM_YIN
 
 # ───────────────────────────────────────────
 # 0. 灵体常数（调参集中于此）
@@ -247,6 +249,18 @@ def 夹01(v: float) -> float:
     return max(0.0, min(1.0, v))
 
 
+def 转阳(world, 出, 入, 量: float, 率: float = 1.0):
+    """灵与灵之间的阳转移：出者实扣，入者实受；
+    路途损耗与上限溢出皆就地归还炁场——能量不生不灭（宇宙底座第一律）。"""
+    扣 = min(出.yang, 量)
+    出.yang -= 扣
+    旧 = 入.yang
+    入.yang = min(100.0, 入.yang + 扣 * 率)
+    余 = 扣 - (入.yang - 旧)
+    if 余 > 0.0:
+        world.qi.归还(入.y, 入.x, 阳=余)
+
+
 def 环境印记(world: World, y: int, x: int) -> dict:
     """出生地的环境塑造值（各位点 0..1）：环境塑造 DNA——河边生者善渔。
     采样出生点半径 4：水域率→渔猎；平均高度+石树→建造/百工；草率+湿度→种植/畜牧；
@@ -394,6 +408,7 @@ class Spirit:
         self.y, self.x = y, x
         self.诞生念 = tick
         self.alive = True
+        self._世界 = None     # 世界回链（会话建立时挂上）：逸散归还炁场之用
 
         # 阳、水分与力量：阴凝聚时所得的一份阳
         self.yang = rng.uniform(70.0, 95.0)
@@ -839,6 +854,7 @@ class Spirit:
             self.strength = max(4.0, self.strength - 0.008)     # 筋骨渐衰
             cap = max(60.0, 100.0 - (年龄日 - OLD_AGE_DAY) * 2.5)  # 阳上限渐缩
             if self.yang > cap:
+                world.qi.归还(self.y, self.x, 阳=self.yang - cap)   # 衰老之阳还于天地
                 self.yang = cap
         if tick - self.诞生念 >= self.寿数:
             self._寿终(world, tick, report, spirits)
@@ -891,7 +907,9 @@ class Spirit:
             else:
                 逸散 += -气温 * 0.015
         self._耗阳(逸散)
-        self.水分 = max(0.0, self.水分 - THIRST_DECAY)
+        排 = min(self.水分, THIRST_DECAY)
+        self.水分 -= 排
+        world.water[self.y, self.x] += 排 * BODY2FIELD   # 汗溺之排，就地还场（水过身体，终还于土）
 
         # 随身物什各按其材质腐坏（寒慢热快）；陶罐藏粮，腐坏减半。
         # 存粮腐坏是锥心之痛——痛一次，积一分烧土为瓮之思。
@@ -1131,8 +1149,7 @@ class Spirit:
                     self.bag.append(余食)
                     借物 = 余食.类型
                 else:
-                    b.yang -= 8.0
-                    self.yang = min(100.0, self.yang + 8.0)
+                    转阳(world, b, self, 8.0)      # 赊一口阳气：灵与灵之间的转移
                     借物 = "口粮"
                 b.credits.setdefault(self.name, []).append((借物, tick))
                 self.debts.setdefault(b.name, []).append((借物, tick))
@@ -1168,14 +1185,14 @@ class Spirit:
     def _吃(self, world: World, it: Item, tick: int, report, rng):
         """吃下一份食物。熟食养人；生食有病患之险。"""
         self.bag.remove(it)
-        self.yang = min(100.0, self.yang + FOOD_YANG[it.类型])
+        self._泵阳(world, FOOD_YANG[it.类型])     # 食入之阳，记日月之泵
         self.stats["进食"] += 1
         # 吃过一口熟食，便想学这手艺——吃一口积一分
         if it.类型 in ("熟肉", "熟鱼"):
             self._积学("烹饪", 12.0, tick, report,
                        "吃了熟食，一心想学这手艺", "熟食之美")
         if it.类型 in RAW_KINDS and rng.random() < RAW_SICK:
-            self.yang -= 5.0
+            self._耗阳(5.0)     # 病耗亦逸散，就地归还
             self.remember("吃了生冷，腹中绞痛", "病患", None, 0.55, tick)
             report(tick, (self.y, self.x),
                    f"{self.name} 吃了生{it.类型[1:]}，腹中绞痛（因：生食不洁）",
@@ -1187,7 +1204,7 @@ class Spirit:
     def _进食(self, world: World, tick: int, report, rng):
         if world.grass[self.y, self.x] >= EAT_GRASS_MIN:
             world.grass[self.y, self.x] = 0.0
-            self.yang = min(100.0, self.yang + EAT_GRASS_GAIN)
+            self._泵阳(world, EAT_GRASS_GAIN)     # 采食草木，记日月之泵
             self.mood["希望"] = min(1.0, self.mood["希望"] + 0.1)
             self.mood["疲惫"] = max(0.0, self.mood["疲惫"] - 0.1)
             self.stats["进食"] += 1
@@ -1245,6 +1262,9 @@ class Spirit:
                 得手 *= 0.5    # 隔一步扑猎，胜算减半
             if rng.random() < 得手:
                 world.animals.remove(a)
+                # 猎杀亦坏灭：余阳与形阴就地归还（倾覆），肉骨归猎手
+                world.qi.归还(a.y, a.x, 阳=max(0.0, a.阳),
+                              阴=BEAST_FORM_YIN.get(a.种类, 10.0))
                 肉, 骨 = {"鸡": (2, 1), "羊": (4, 2), "牛": (6, 3)}[a.种类]
                 world.carrions.append(Carrion(a.y, a.x, 肉, 骨, 名=a.种类))
                 self._涨熟练("渔猎")
@@ -1265,16 +1285,17 @@ class Spirit:
         # 怀中陶罐有水，先饮罐中——储水以备旱，罐的价值正在于此
         罐 = next((it for it in self.bag if it.类型 == "陶罐" and it.盛水 > 0), None)
         if 罐 is not None:
-            罐.盛水 = 0.0
-            self.水分 = 100.0
+            取 = min(罐.盛水, 100.0 - self.水分)     # 罐之水入我之躯：罐与身同为水之器
+            self.水分 += 取
+            罐.盛水 -= 取
             self.stats["饮水"] += 1
             report(tick, (self.y, self.x),
-                   f"{self.name} 饮尽陶罐中所储之水（因：口渴+储水备旱）",
+                   f"{self.name} 饮陶罐中所储之水（因：口渴+储水备旱）",
                    kind="饮水", actor=self.name)
             return
         if world.water[self.y, self.x] >= DRINK_MIN:
             self._饮水(world, tick, report, rng)
-            self._灌罐(report, tick)
+            self._灌罐(world, report, tick)
             return
         # 立在记忆中的水点上却见了底：亲见枯竭，从心中抹去
         if (self.y, self.x) in self.known_water:
@@ -1304,14 +1325,18 @@ class Spirit:
                        "望着干渴的大地忽悟：低洼之下或有九泉，可凿井取之", "焦渴难耐")
         self._探索(world, rng)
 
-    def _灌罐(self, report, tick):
-        """饮于水泽时，顺手把空陶罐灌满。"""
+    def _灌罐(self, world: World, report, tick):
+        """饮于水泽时，顺手把空陶罐灌满——罐之水亦自场来，按率结算。"""
         罐 = next((it for it in self.bag if it.类型 == "陶罐" and it.盛水 <= 0), None)
         if 罐 is not None:
-            罐.盛水 = 60.0
-            report(tick, (self.y, self.x),
-                   f"{self.name} 把陶罐灌满了水（因：储水备旱）",
-                   kind="灌水", actor=self.name)
+            取 = min(60.0 * BODY2FIELD,
+                     max(0.0, float(world.water[self.y, self.x]) - DRINK_KEEP))
+            world.water[self.y, self.x] -= 取
+            罐.盛水 = 取 / BODY2FIELD
+            if 罐.盛水 > 0:
+                report(tick, (self.y, self.x),
+                       f"{self.name} 把陶罐灌满了水（因：储水备旱）",
+                       kind="灌水", actor=self.name)
 
     def _汲井(self, world: World, tick: int, report, rng) -> bool:
         """在井边汲水。井水取自九泉；井淤则淘之，井枯则徒叹。"""
@@ -1319,11 +1344,11 @@ class Spirit:
         if well is None:
             self._known_wells.pop((self.y, self.x), None)
             return False
-        st = world.汲井(well)
+        st = world.汲井(well, 需=(100.0 - self.水分) * BODY2FIELD)
         if st == "活":
             self.水分 = 100.0
             self.stats["饮水"] += 1
-            self._灌罐(report, tick)
+            self._灌罐(world, report, tick)
             report(tick, (self.y, self.x),
                    f"{self.name} 汲井水而饮（因：口渴+井水取自九泉）",
                    kind="汲水", actor=self.name)
@@ -1343,7 +1368,11 @@ class Spirit:
         return False
 
     def _饮水(self, world: World, tick: int, report, rng=None):
-        self.水分 = 100.0
+        """饮于泽：场之水入我之躯——只是转移，不是消失（水过身体，总量不变）。"""
+        需 = (100.0 - self.水分) * BODY2FIELD
+        取 = min(需, max(0.0, float(world.water[self.y, self.x]) - DRINK_KEEP))
+        world.water[self.y, self.x] -= 取
+        self.水分 += 取 / BODY2FIELD
         self.stats["饮水"] += 1
         report(tick, (self.y, self.x),
                f"{self.name} 饮于水泽（因：口渴）",
@@ -1409,8 +1438,7 @@ class Spirit:
         self._last_rob = tick
         猎物 = min(弱者, key=lambda s: s.strength)
         amount = min(11.0, 3.0 + 猎物.yang * 0.18)   # 抢夺是夺食，不是索命
-        猎物.yang -= amount
-        self.yang = min(100.0, self.yang + amount * 0.8)
+        转阳(world, 猎物, self, amount, 率=0.8)      # 夺来之阳沿途有耗，耗者归还炁场
         # 行囊中的食物与利器也一并易手（武器可被抢夺、遗留、传承）
         可夺 = [it for it in 猎物.bag if it.类型 in FOOD_YANG] \
             or [it for it in 猎物.bag if it.类型 in WEAPON_BONUS]
@@ -1724,8 +1752,7 @@ class Spirit:
                     self._走向(world, b.y, b.x, rng)     # 送食于途
                     return True
                 self._share_cd[b.name] = tick
-                self.yang -= SHARE_YANG
-                b.yang = min(100.0, b.yang + SHARE_YANG)
+                转阳(world, self, b, SHARE_YANG)     # 分食于途：灵与灵之间的转移
                 濒死 = b.yang < 20.0
                 b.remember(f"{self.name} 救过我" if 濒死 else f"{self.name} 分过我食物",
                            "受助", self.name, 0.90 if 濒死 else 0.60, tick)
@@ -1748,8 +1775,7 @@ class Spirit:
                     b.bag.append(余食)
                     借物 = 余食.类型
                 else:
-                    self.yang -= 10.0
-                    b.yang = min(100.0, b.yang + 10.0)
+                    转阳(world, self, b, 10.0)       # 赊一口阳气，言明后还
                     借物 = "口粮"
                 self.credits.setdefault(b.name, []).append((借物, tick))
                 b.debts.setdefault(self.name, []).append((借物, tick))
@@ -2036,8 +2062,7 @@ class Spirit:
                 self.bag.remove(还物)
                 b.bag.append(还物)
             elif 物 == "口粮" and self.yang > 60.0:
-                self.yang -= 10.0
-                b.yang = min(100.0, b.yang + 10.0)
+                转阳(world, self, b, 10.0)       # 以阳气相赊相还：灵与灵之间的转移
                 还物 = None
             else:
                 # 贝可还债：照债物的名义价值折算美贝
@@ -2072,8 +2097,7 @@ class Spirit:
                 b.bag.append(余食)
                 借物 = 余食.类型
             else:
-                self.yang -= 10.0
-                b.yang = min(100.0, b.yang + 10.0)
+                转阳(world, self, b, 10.0)       # 以阳气相赊相还：灵与灵之间的转移
                 借物 = "口粮"
             self.credits.setdefault(b.name, []).append((借物, tick))
             b.debts.setdefault(self.name, []).append((借物, tick))
@@ -2236,6 +2260,8 @@ class Spirit:
         # 出生地环境写入婴儿 DNA：生在谁家檐下，就染上哪方水土
         child = Spirit(name, 屋.y, 屋.x, tick, rng, 父母=(self, partner),
                        env=环境印记(world, 屋.y, 屋.x))
+        child._世界 = world
+        world.生灵入账(child)      # 阴凝聚得一点阳：新生之初阳与形阴自炁场抽取
         spirits.append(child)
         self.子女.append(name)
         partner.子女.append(name)
@@ -2748,7 +2774,7 @@ class Spirit:
                 continue
             if (self.y, self.x) == (f.y, f.x):
                 world.farms.remove(f)
-                self.yang = min(100.0, self.yang + HARVEST_GAIN)
+                self._泵阳(world, HARVEST_GAIN)     # 田间收获，记日月之泵
                 self.mood["希望"] = min(1.0, self.mood["希望"] + 0.15)
                 report(tick, (f.y, f.x),
                        f"{self.name} 收获了亲手种的庄稼（因：种瓜得瓜）",
@@ -2761,7 +2787,7 @@ class Spirit:
             if PLANT_MOIST[0] <= m <= PLANT_MOIST[1] and world.water[self.y, self.x] < 0.8 \
                     and world.building_at(self.y, self.x) is None \
                     and not any(f.y == self.y and f.x == self.x for f in world.farms):
-                self.yang -= PLANT_COST
+                self._耗阳(PLANT_COST)      # 躬耕之耗，就地归还
                 world.farms.append(Farm(self.y, self.x, self.name, tick))
                 report(tick, (self.y, self.x),
                        f"{self.name} 在{world.terrain_name(self.y, self.x)}播下种子（因：习得种植+土润宜耕）",
@@ -3202,8 +3228,8 @@ class Spirit:
         pa = self.strength * (1.0 + 我武) * rng.uniform(0.9, 1.1)
         pd = target.strength * (1.0 + 彼武) * rng.uniform(0.9, 1.1)
         胜, 败 = (self, target) if pa >= pd else (target, self)
-        败.yang -= rng.uniform(12.0, 20.0)   # 分出高下，不必见生死
-        胜.yang -= rng.uniform(2.0, 5.0)
+        败._耗阳(rng.uniform(12.0, 20.0))   # 分出高下，不必见生死；搏耗之阳就地归还
+        胜._耗阳(rng.uniform(2.0, 5.0))
 
         world.add_mark("刻痕", self.y, self.x, TICKS_PER_DAY // 2)
         report(tick, (self.y, self.x),
@@ -3285,7 +3311,19 @@ class Spirit:
             self.training = False
 
     def _耗阳(self, amount: float):
-        self.yang -= amount
+        """阳之逸散：就地归还炁场——洒水壶，走到哪撒到哪（宇宙底座第一律）。"""
+        扣 = min(self.yang, amount)
+        self.yang -= 扣
+        w = self._世界
+        if w is not None and 扣 > 0.0:
+            w.qi.归还(self.y, self.x, 阳=扣)
+
+    def _泵阳(self, world: World, 量: float):
+        """自生物质得阳（食草啖肉、田间收获）：记日月之泵——
+        太阳能经草木鱼虫入链；上限溢出者不入账（溢者本未入网）。"""
+        旧 = self.yang
+        self.yang = min(100.0, self.yang + 量)
+        world.账.泵 += self.yang - 旧
 
     def _死否(self, world: World, tick: int, report, 因: str, spirits: list = ()) -> bool:
         """阳尽则亡：遗体成尸骨印记（带姓名，供故人悼念），保质约 2 日后化为土。
@@ -3293,6 +3331,8 @@ class Spirit:
         if self.alive and self.yang <= 0:
             self.yang = 0.0
             self.alive = False
+            world.生灵归账(self.y, self.x, 0.0, self.水分)   # 形阴与躯中残水，尽数归还（倾覆）
+            self.水分 = 0.0
             self.卒念 = tick
             world.add_mark("尸骨", self.y, self.x, 2 * TICKS_PER_DAY, 标签=self.name)
             report(tick, (self.y, self.x),
@@ -3312,7 +3352,9 @@ class Spirit:
 
     def _寿终(self, world: World, tick: int, report, spirits: list):
         """寿数已尽：不是被杀，不是饿死，是阳寿自然竭尽——安然闭目。"""
+        world.生灵归账(self.y, self.x, self.yang, self.水分)   # 余阳、形阴、躯中残水，尽数归还
         self.yang = 0.0
+        self.水分 = 0.0
         self.alive = False
         self.卒念 = tick
         world.add_mark("尸骨", self.y, self.x, 2 * TICKS_PER_DAY, 标签=self.name)
@@ -3389,7 +3431,9 @@ class Spirit:
         """幼崽不事生产、不争斗：跟着父母，饿了受哺，看着学着长大。"""
         self._心情漂移()
         self._耗阳(YANG_DECAY * self.metabo * 0.6)   # 孩童耗阳少些
-        self.水分 = max(0.0, self.水分 - THIRST_DECAY)
+        排 = min(self.水分, THIRST_DECAY)
+        self.水分 -= 排
+        world.water[self.y, self.x] += 排 * BODY2FIELD   # 汗溺之排，就地还场（水过身体，终还于土）
         if self._死否(world, tick, report, "阳尽", spirits):
             return
         if self._感知(world, spirits, tick, report, rng):
@@ -3407,8 +3451,7 @@ class Spirit:
         d = self._切比(self.y, self.x, p.y, p.x)
         # 饿了：父母在旁则受哺
         if self.yang < 60.0 and d <= 1 and p.yang > 40.0:
-            p.yang -= 12.0
-            self.yang = min(100.0, self.yang + 12.0)
+            转阳(world, p, self, 12.0)       # 哺育：父母之阳转移于子
             self.stats["进食"] += 1
             self.remember(f"{p.name} 哺育我", "亲缘", p.name, 0.85, tick)
             return
