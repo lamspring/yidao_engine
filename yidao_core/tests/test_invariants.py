@@ -109,6 +109,7 @@ def test_long_run():
     s = Session.genesis(seed=2026, on_event=lambda **kw: log.append(kw))
     水量初 = s.world.水总量A(s.spirits)
     能量初 = s.world.能量总量B(s.spirits)
+    万物初 = s.world.万物总量C(s.spirits)
     s.run(TICKS_PER_DAY * 30)
     w = s.world
 
@@ -121,9 +122,23 @@ def test_long_run():
     ok("有界·记忆有容量", all(len(x.memories) <= 41 for x in s.spirits),
        f"最多 {max(len(x.memories) for x in s.spirits)} 条")
     ok("有界·众灵数值正常", all(-1e-6 <= x.yang <= 100.1 and 0 <= x.pressure <= 1.01
-                                for x in s.spirits))
+                                for x in s.spirits if x.alive))   # 死者心已盖棺，不在此约
     ok("有界·炁场非负", float(w.qi.yin.min()) >= 0 and float(w.qi.yang.min()) >= 0,
        f"炁 {w.qi.总量():.0f}")
+
+    # 一物一处：任何物品不得同时处于两个容器（分身有术曾是储粮循环的真 bug）
+    物位 = {}
+    for x in s.spirits:
+        for it in x.bag:
+            物位.setdefault(id(it), []).append(x.name + ".bag")
+    for b in w.buildings:
+        for it in b.仓储:
+            物位.setdefault(id(it), []).append(b.主人 + ".仓储")
+    for r in w.relics:
+        for it in r["物"]:
+            物位.setdefault(id(it), []).append("遗物@" + r["名"])
+    分身 = {k: v for k, v in 物位.items() if len(v) > 1}
+    ok("一物一处·无分身", not 分身, f"{分身}")
 
     # 宇宙底座第一律：总量守恒，唯越界可破，越界必留痕
     # A 域（水文：场水+云+九泉+体水+罐水）：Δ 必须严格等于越界账（云散排气/天道注云）
@@ -131,12 +146,20 @@ def test_long_run():
     差A = abs(水量末 - 水量初 - w.账.越界A)
     ok("守恒·水文严格守恒±越界账", 差A < 1e-6 * max(水量初, 1.0),
        f"Δ {水量末 - 水量初:+.1f} = 越界账 {w.账.越界A:+.1f}（差 {差A:.2e}）")
-    # B 域（能量）：Δ(炁+灵阳+兽阳) 必须严格等于 泵 − 草汲 + 越界账
+    # B 域（能量）：Δ(炁+灵阳+灵形阴+兽阳+兽形阴) = 泵 − 草汲 + 物归 + 食转 + 越界账
     能量末 = w.能量总量B(s.spirits)
-    应 = w.账.泵 - w.账.草汲 + w.账.越界B
+    应 = w.账.泵 - w.账.草汲 + w.账.物归 + w.账.食转 + w.账.越界B
     差B = abs(能量末 - 能量初 - 应)
     ok("守恒·能量严格守恒±泵与越界账", 差B < 1e-6 * max(能量初, 1.0),
-       f"Δ {能量末 - 能量初:+.1f} = 泵 {w.账.泵:.1f} − 草汲 {w.账.草汲:.1f} + 越界 {w.账.越界B:+.1f}（差 {差B:.2e}）")
+       f"Δ {能量末 - 能量初:+.1f} = 泵 {w.账.泵:.1f} − 草汲 {w.账.草汲:.1f} "
+       f"+ 物归 {w.账.物归:.1f} + 食转 {w.账.食转:.1f} + 越界 {w.账.越界B:+.1f}（差 {差B:.2e}）")
+    # C 域（器物）：Δ(物品+屋火井栏) = 源C − 物归 − 食转 + 越界C
+    万物末 = w.万物总量C(s.spirits)
+    应C = w.账.源C - w.账.物归 - w.账.食转 + w.账.越界C
+    差C = abs(万物末 - 万物初 - 应C)
+    ok("守恒·器物严格守恒±源与归", 差C < 1e-6 * max(万物初, 1.0),
+       f"Δ {万物末 - 万物初:+.1f} = 源C {w.账.源C:.1f} − 物归 {w.账.物归:.1f} "
+       f"− 食转 {w.账.食转:.1f} + 越界 {w.账.越界C:+.1f}（差 {差C:.2e}）")
 
     kinds = {e["kind"] for e in log}
     天道 = sum(1 for e in log if e["kind"] == "天道")
@@ -150,6 +173,58 @@ def test_long_run():
         if isinstance(值, list) and len(值) > 1000:
             历史嫌疑.append((名, len(值)))
     ok("世界无史", not 历史嫌疑, f"{历史嫌疑}")
+
+
+# ── 9.5 五行相律（土与水）─────────────────────
+def test_phases():
+    w = World(seed=42)
+    w.trees.clear()     # 相律自证：先清场，树木只按测试之意而立
+    # 土相：被水侵蚀则湿为泥；水分大于泥则溃为沙；水少则干；水特别少则硬碎亦成沙
+    w.water[:] = 0.0
+    w.moisture[:] = 0.05
+    ok("相律·极干为沙", w.土相(5, 5) == "沙")
+    w.moisture[:] = 0.15
+    ok("相律·水少为干", w.土相(5, 5) == "干")
+    w.moisture[:] = 0.45
+    ok("相律·适中为土", w.土相(5, 5) == "土")
+    w.moisture[:] = 0.80
+    ok("相律·水蚀为泥", w.土相(5, 5) == "泥")
+    w.water[:] = 2.0
+    ok("相律·水过溃沙", w.土相(5, 5) == "沙")
+    # 水相：多则为流为海，少则为滴为气
+    w.cloud[:] = 0.0
+    w.water[:] = 0.3
+    ok("相律·水少为滴", w.水相(5, 5) == "滴")
+    w.water[:] = 1.0
+    ok("相律·积水为流", w.水相(5, 5) == "流")
+    w.water[:] = 2.5
+    ok("相律·水巨为海", w.水相(5, 5) == "海")
+    w.water[:] = 0.0
+    w.cloud[:] = 0.8
+    ok("相律·水蒸气为气", w.水相(5, 5) == "气")
+    # 火相：星（将熄）/ 火 / 焰（旺）——烧制之事，需旺火方成
+    from yidao_core.world import Fireplace
+    w.fires.clear()
+    ok("相律·无火为无", w.火相(5, 5) == "无")
+    w.fires.append(Fireplace(5, 5, "测试", 阳=10.0))
+    ok("相律·将熄为星", w.火相(5, 5) == "星")
+    w.fires[0].阳 = 30.0
+    ok("相律·常火为火", w.火相(5, 5) == "火")
+    w.fires[0].阳 = 60.0
+    ok("相律·旺火为焰", w.火相(5, 5) == "焰")
+    # 木固土：近树之土，根柢盘结，纵极干亦不易溃为沙
+    from yidao_core.world import Tree
+    w.water[:] = 0.0
+    w.moisture[:] = 0.05
+    ok("相律·无树极干为沙", w.土相(5, 5) == "沙")
+    w.trees.append(Tree(5, 5))
+    ok("相律·木固土", w.土相(5, 5) == "干")
+    # 果树结实：暖季渐熟（开缸即暖季之末，季相为正）
+    t2 = Tree(8, 8, 50.0, 果树=True)
+    w.trees.append(t2)
+    for _ in range(400):
+        w._物理步(预热=True)
+    ok("相律·果树结实", t2.果数 > 0, f"果数 {t2.果数}")
 
 
 # ── 10. 死寂重启（天道守道不救生）──────────────
@@ -183,6 +258,7 @@ if __name__ == "__main__":
     test_seed_at()
     test_determinism()
     test_long_run()
+    test_phases()
     test_stagnation_stir()
     print("─" * 40)
     print(f"全部通过（{PASS} 项断言）。世界的严密性已被断言，而非感觉。")

@@ -134,6 +134,10 @@ FIRE_DECAY = 0.06       # 火每念燃损（须添柴）
 FIRE_RAIN_DMG = 0.4     # 露天火遇雨急熄；屋内灶火无恙
 FIRE_WARM_RADIUS = 2    # 火之暖煦所及
 FIRE_FEED = 25.0        # 添一份木柴所续之阳
+# 火相（五行相律）：星（将熄）/ 火 / 焰（旺）——烧制之事，需旺火方成
+FIRE_EMBER = 20.0       # 阳低于此值，火相为"星"
+FIRE_BLAZE = 45.0       # 阳高于此值，火相为"焰"
+FIRE_ASH_GRASS = 0.25   # 火生土：火熄成灰，灰肥其土，草即荣之量
 
 # ── 井与径（v6.4）：井是凿入九泉的水眼，径是众脚踏出来的路 ──
 WELL_YANG0 = 70.0       # 井落成时的阳存量（石土之质，缓于茅屋）
@@ -154,30 +158,46 @@ PATH_DECAY = 0.012      # 径每念荒芜（久无人走则消失）
 PATH_COST = 0.5         # 径上移动耗阳折半
 
 # ── 物品：有阳存量、会腐坏，腐速因材质而异（鱼鲜最快，骨石最慢）──
-ITEM_DECAY = {"生鱼": 0.09, "生肉": 0.06, "奶": 0.08, "蛋": 0.04,
+ITEM_DECAY = {"生鱼": 0.09, "生肉": 0.06, "奶": 0.08, "蛋": 0.04, "果": 0.05,
               "熟肉": 0.02, "熟鱼": 0.02, "谷种": 0.005,
               "茅草": 0.010, "藤": 0.010, "木": 0.003, "石": 0.001, "骨": 0.0008,
               "石斧": 0.001, "石刀": 0.001, "鱼竿": 0.001, "耒耜": 0.001,
               "背篓": 0.001, "石矛": 0.001, "棍棒": 0.001,
-              "土": 0.002, "陶罐": 0.001, "寒衣": 0.004,
+              "土": 0.002, "沙": 0.001, "矿石": 0.001, "金块": 0.0008, "金刃": 0.0008,
+              "陶罐": 0.001, "寒衣": 0.004,
               "骨饰": 0.0008, "美石": 0.001, "美贝": 0.0005}
-ITEM_YANG = {"生鱼": 30.0, "生肉": 40.0, "奶": 25.0, "蛋": 35.0,
+ITEM_YANG = {"生鱼": 30.0, "生肉": 40.0, "奶": 25.0, "蛋": 35.0, "果": 22.0,
              "熟肉": 40.0, "熟鱼": 35.0, "谷种": 50.0,
              "茅草": 40.0, "藤": 40.0, "木": 60.0, "石": 80.0, "骨": 70.0,
-             "土": 40.0, "陶罐": 60.0, "寒衣": 50.0,
+             "土": 40.0, "沙": 35.0, "矿石": 70.0, "金块": 85.0,
+             "陶罐": 60.0, "寒衣": 50.0,
              "骨饰": 70.0, "美石": 80.0, "美贝": 80.0}
 ITEM_YANG_TOOL = 50.0   # 工具/武器初生之阳；使用中磨损，阳尽断裂
 TOOL_WEAR = 1.5         # 工具每用一次磨损之阳
+
+# ── 万物之形阴（C 域器物账）：生时自场抽取、灭时尽数归还 ──
+# 物品之形阴 = 初生阳 × 0.4（形阳相随，规则免表）；建筑器物各有定数
+YIN_HUT = 60.0          # 茅屋形阴（阳0=80）
+YIN_FIRE = 30.0         # 火堆形阴（阳0=60）
+YIN_FENCE = 40.0        # 围栏形阴（阳0=60）
+# 井无形阴：井非阴阳凝聚之物，乃地形之变（如径），不在器物账内
+
+
+def 物形阴(类型: str) -> float:
+    """物品之形阴：初生阳的四成（形阳相随）。"""
+    return ITEM_YANG.get(类型, ITEM_YANG_TOOL) * 0.4
 
 # 物候事件的气温阈值
 FROST_AT = 0.0          # 霜冻线
 HEAT_AT = 30.0          # 酷暑线
 
 
-@dataclass
+@dataclass(eq=False)
 class Item:
     """物品：一份阴凝聚的阳。草藤易腐，木石耐久，骨最不坏。
-    陶罐另带一笔"盛水"——罐可储水，水尽则空。"""
+    陶罐另带一笔"盛水"——罐可储水，水尽则空。
+    eq=False：物是实体不是数值——比较与移除皆按"是不是这同一个"（identity），
+    杜绝两件数值相同的物被误认为同一个（储粮循环曾因此一物两处、分身有术）。"""
     类型: str
     阳: float = 0.0
     盛水: float = 0.0
@@ -245,10 +265,14 @@ class Farm:
 
 @dataclass
 class Tree:
-    """树木：缓慢生长的世界对象。可伐取木；阳尽而枯。"""
+    """树木：缓慢生长的世界对象。可伐取木；阳尽而枯。
+    五行相律（木）：木固土——近树之土，根柢盘结，不易溃为沙；
+    果树暖季结实，可采食；寒季落尽，还于土。"""
     y: int
     x: int
     阳: float = 10.0
+    果树: bool = False
+    果数: int = 0
 
 
 @dataclass
@@ -300,8 +324,11 @@ class Fence:
 
 @dataclass
 class Well:
-    """井：凿入九泉的水眼。井水取自九泉（每汲微量扣减）；
-    会淤塞（雨携泥入、用久则淤）、会枯（九泉涸则暂枯）、阳尽则废成井骸。"""
+    """井：凿入九泉的水眼——地形之变，非阴阳凝聚之物。
+    水脉本在地底，人只是把泥土掘开获得一个取水的入口（与径同类）。
+    其"阳"实为井壁的通畅度（如径之踩踏数，是地形的状态，不在能量账内）：
+    雨携泥入、用久则淤（通畅 <25 汲不得水，知法者可淘浚复之）；
+    九泉涸则井暂枯；通畅尽则塌淤成坑，留井骸印记。"""
     y: int
     x: int
     主人: str
@@ -385,10 +412,12 @@ class World:
         self._events: list[dict] = []
 
         # 创世树与兽群：阴凝聚得阳，散于水草之间
+        # 五行相律（木）：树木有品类——约三成为果树，暖季结实可采食
         for _ in range(14):
             y, x = int(self._rng.integers(0, size)), int(self._rng.integers(0, size))
             if self.moisture is not None:
-                self.trees.append(Tree(y, x, float(self._rng.uniform(20, 90))))
+                self.trees.append(Tree(y, x, float(self._rng.uniform(20, 90)),
+                                       果树=bool(self._rng.random() < 0.3)))
         for 种类, 数 in (("鸡", 6), ("羊", 4), ("牛", 3)):
             for _ in range(数):
                 y, x = int(self._rng.integers(0, size)), int(self._rng.integers(0, size))
@@ -526,16 +555,20 @@ class World:
         self.moisture += (inst - self.moisture) * rate
         np.clip(self.moisture, 0.0, 1.0, out=self.moisture)
 
-        # 草：湿度适中则生，暖季速寒季缓，水淹则溺，干旱则枯
+        # 草：湿度适中则生，暖季速寒季缓，水淹则溺，干旱则枯。
+        # 五行相律（土）：泥最荣，土次之，干瘠薄，沙难生——相态系数修其生长
         温生 = float(np.clip(温均 / 18.0, 0.2, 1.3))
         suit = np.clip(1.0 - np.abs(self.moisture - GRASS_SUIT_CENTER) / GRASS_SUIT_WIDTH, 0.0, 1.0)
-        self.grass += GRASS_GROW * 温生 * suit * (1.0 - self.grass)
+        沙 = (self.water >= 1.5) | (self.moisture < 0.08)     # 土相为沙：极干硬碎或水蚀过甚
+        相系 = np.where(沙, 0.2, 1.0)
+        self.grass += GRASS_GROW * 温生 * suit * 相系 * (1.0 - self.grass)
         # 草汲炁（逸散即播种）：场中之阳养草木——众生沿途归还之能量，经场转手喂给后来者
-        汲 = np.minimum(self.qi.yang, QI_GRASS_DRINK) * 温生 * suit * (1.0 - self.grass)
+        汲 = np.minimum(self.qi.yang, QI_GRASS_DRINK) * 温生 * suit * 相系 * (1.0 - self.grass)
         self.qi.yang -= 汲
         self.grass += 汲 * 0.5
         self.账.草汲 += float(汲.sum())
         self.grass[self.water > GRASS_FLOOD] -= 0.05
+        self.grass[(self.water >= 1.5) & (self.water <= GRASS_FLOOD)] -= 0.02   # 水蚀成沙，草亦难立
         self.grass[self.moisture < GRASS_DRY] -= 0.008
         np.clip(self.grass, 0.0, 1.0, out=self.grass)
 
@@ -555,19 +588,26 @@ class World:
             self.insects *= 0.95
         np.clip(self.insects, 0.0, INSECT_CAP, out=self.insects)
 
-        # 树：缓慢生长，缓慢繁衍
+        # 树：缓慢生长，缓慢繁衍；果树暖季结实、寒季落尽（还于土，生物质循环）
         for tree in list(self.trees):
             tree.阳 = min(100.0, tree.阳 + TREE_GROW)
             if 温均 < FROST_AT - 5.0:
                 tree.阳 -= 0.05     # 严寒伤木
                 if tree.阳 <= 0:
                     self.trees.remove(tree)
+            # 果树结实：暖季渐熟（两念一果，至多三枚），寒季落尽
+            if tree.果树:
+                if 季 > 0.0 and tree.阳 > 40.0 and self._rng.random() < 0.02:
+                    tree.果数 = min(3, tree.果数 + 1)
+                elif 季 < -0.3:
+                    tree.果数 = 0
         if len(self.trees) < TREE_MAX and self._rng.random() < TREE_SPREAD * n * n:
             湿区 = (self.moisture > 0.3) & (self.water < 1.0)
             ys, xs = np.nonzero(湿区)
             if len(ys):
                 i = int(self._rng.integers(0, len(ys)))
-                self.trees.append(Tree(int(ys[i]), int(xs[i])))
+                self.trees.append(Tree(int(ys[i]), int(xs[i]),
+                                       果树=bool(self._rng.random() < 0.3)))
 
         # 石：高地风化成砾，极缓慢再生；藤：水泽边蔓延
         高地 = self.height >= 6.5
@@ -582,7 +622,8 @@ class World:
         # 物候节点：寒暑交替、初霜、酷暑——天地自有节律
         self._物候(t, 季, 温均)
 
-        # 建筑：阳之逸散 + 风雨积水之损；阳尽则塌，化为屋骸
+        # 建筑：阳之逸散 + 风雨积水之损——逸散与剥蚀皆就地归还炁场（物归）；
+        # 阳尽则塌，形阴与仓储之余尽数归还，化为屋骸
         for b in list(self.buildings):
             损 = HUT_DECAY
             if self.rain_mask[b.y, b.x]:
@@ -592,12 +633,24 @@ class World:
                 损 += (self.water[b.y, b.x] - 0.8) * HUT_FLOOD_DMG
             if self.temp[b.y, b.x] < FROST_AT:
                 损 += 0.01     # 冻裂
-            b.阳 -= 损
-            # 屋内仓储：腐坏减半（仓储的意义）
-            b.仓储 = [it for it in b.仓储
-                      if not it.腐一步(float(self.temp[b.y, b.x]), 屋内=True)]
+            耗 = min(损, b.阳)
+            b.阳 -= 耗
+            self.物归(b.y, b.x, 耗)
+            # 屋内仓储：腐坏减半（仓储的意义）；腐者之量亦归还炁场
+            气温b = float(self.temp[b.y, b.x])
+            存仓 = []
+            for it in b.仓储:
+                旧 = it.阳
+                if it.腐一步(气温b, 屋内=True):
+                    self.物归(b.y, b.x, 旧 + 物形阴(it.类型))
+                else:
+                    self.物归(b.y, b.x, 旧 - it.阳)
+                    存仓.append(it)
+            b.仓储 = 存仓
             if b.阳 <= 0:
                 self.buildings.remove(b)
+                self.物归(b.y, b.x, YIN_HUT
+                          + sum(it.阳 + 物形阴(it.类型) for it in b.仓储))
                 self.collapsed_huts += 1
                 self.add_mark("屋骸", b.y, b.x, HUT_MARK_TTL, 标签=b.主人)
                 self._events.append({
@@ -621,30 +674,43 @@ class World:
                     "kind": "田枯", "pos": (f.y, f.x), "actor": f.主人,
                     "text": f"{f.主人} 的农田毁了（因：水土失调）"})
 
-        # 火堆：燃柴续阳，露天遇雨则熄
+        # 火堆：燃柴续阳，燃损归还炁场；露天遇雨则熄，形阴亦还
         for f in list(self.fires):
-            f.阳 -= FIRE_DECAY
+            耗 = min(FIRE_DECAY, f.阳)
+            f.阳 -= 耗
+            self.物归(f.y, f.x, 耗)
             if not f.屋内 and self.rain_mask[f.y, f.x]:
-                f.阳 -= FIRE_RAIN_DMG
+                耗 = min(FIRE_RAIN_DMG, f.阳)
+                f.阳 -= 耗
+                self.物归(f.y, f.x, 耗)
             if f.阳 <= 0:
                 self.fires.remove(f)
+                self.物归(f.y, f.x, YIN_FIRE)
+                # 火生土：火熄成灰，灰肥其土——烧尽之结，恰是草木之粮
+                self.grass[f.y, f.x] = min(1.0, self.grass[f.y, f.x] + FIRE_ASH_GRASS)
                 self._events.append({
                     "kind": "火熄", "pos": (f.y, f.x), "actor": f.主人,
                     "text": f"{f.主人} 的火堆熄了（因：薪尽而火传难继）"})
 
-        # 尸骸腐坏，尽则归土；围栏缓腐
+        # 尸骸腐坏，尽则归土（尸为泵所养之生物质，不入器物账）；围栏缓腐，腐者归还
         for c in list(self.carrions):
             c.阳 -= CARRION_DECAY * float(np.clip(0.5 + self.temp[c.y, c.x] / 30.0, 0.3, 1.8))
             if c.阳 <= 0:
                 self.carrions.remove(c)
         for fe in list(self.fences):
-            fe.阳 -= 0.01
+            耗 = min(0.01, fe.阳)
+            fe.阳 -= 耗
+            self.物归(fe.y, fe.x, 耗)
             if fe.阳 <= 0:
                 self.fences.remove(fe)
+                self.物归(fe.y, fe.x, YIN_FENCE)
 
-        # 井：井壁阳逸散，雨携泥淤；阳尽则废，留井骸印记
+        # 井：井壁渐淤（雨携泥入、用久则淤）——井为地形之变，非器物，
+        # 其"阳"是通畅度（地形之状态，如径之踩踏数），不在能量账内。
+        # 五行相律（土）：沙地凿井易塌——沙无结构性，井壁通畅三倍速溃
         for wl in list(self.wells):
-            wl.阳 -= WELL_DECAY
+            沙蚀 = 3.0 if self.土相(wl.y, wl.x) == "沙" else 1.0
+            wl.阳 -= WELL_DECAY * 沙蚀
             if self.rain_mask[wl.y, wl.x]:
                 wl.阳 -= WELL_RAIN_SILT
             if wl.阳 <= 0:
@@ -668,9 +734,15 @@ class World:
 
         # 印记随时间衰减消失——世界不可能永久一成不变
         self.marks = [m for m in self.marks if m.尚存(t)]
-        # 无主遗物亦如此：日久归土
-        self.relics = [r for r in self.relics
-                       if t - r["念"] < 3 * TICKS_PER_DAY]
+        # 无主遗物亦如此：日久归土——物之余阳与形阴，尽数归还炁场
+        存遗 = []
+        for r in self.relics:
+            if t - r["念"] < 3 * TICKS_PER_DAY:
+                存遗.append(r)
+            else:
+                for it in r["物"]:
+                    self.物归(r["y"], r["x"], it.阳 + 物形阴(it.类型))
+        self.relics = 存遗
 
     def _物候(self, tick: int, 季: float, 温均: float):
         """寒暑节点入流：寒潮、酷暑、初霜——每一寒暑只报一次。"""
@@ -896,6 +968,36 @@ class World:
                 + sum(s.yang + (FORM_YIN if s.alive else 0.0) for s in spirits)
                 + sum(a.阳 + BEAST_FORM_YIN.get(a.种类, 10.0) for a in self.animals))
 
+    def 物归(self, y: int, x: int, 量: float):
+        """万物与炁场之间的归还与支取（C↔B）：逸散、腐坏、塌毁、归土之量，就地归还；
+        量为负则是炁场补入万物（凝聚、营建之不足，阴向之收敛），账亦照记。"""
+        if 量 >= 0.0:
+            self.qi.归还(y, x, 阳=量)
+            self.账.物归 += 量
+        else:
+            实阳, _ = self.qi.抽取(y, x, 阳=-量)
+            self.账.物归 -= 实阳
+            self.账.越界C += (-量) - 实阳      # 全场炁不足之补差（殆不曾见）
+
+    def 源C(self, 量: float):
+        """生物质与太古遗泽入万物之链（采集、伐木、渔获、屠宰、收蛋挤奶）。"""
+        self.账.源C += 量
+
+    def 万物总量C(self, spirits: list) -> float:
+        """C 域（器物）总量：Σ(物品阳+形阴) + Σ(屋火栏阳+形阴)。
+        生物质（草木鱼虫石藤树尸）与太古遗泽是泵的领地，不入此账；
+        井为地形之变（如径），亦非器物，不在此账。"""
+        物能 = 0.0
+        for s in spirits:
+            物能 += sum(it.阳 + 物形阴(it.类型) for it in s.bag)
+        for b in self.buildings:
+            物能 += b.阳 + YIN_HUT + sum(it.阳 + 物形阴(it.类型) for it in b.仓储)
+        物能 += sum(f.阳 + YIN_FIRE for f in self.fires)
+        物能 += sum(f.阳 + YIN_FENCE for f in self.fences)
+        for r in self.relics:
+            物能 += sum(it.阳 + 物形阴(it.类型) for it in r["物"])
+        return 物能
+
     def 水总量A(self, spirits: list) -> float:
         """A 域（水文）总量：场水 + 云 + 九泉 + Σ活灵体水 + Σ罐中盛水。
         身体里的水、罐里的水，都只是"转移了地方"的水——从未离开宇宙。"""
@@ -927,6 +1029,56 @@ class World:
         if h <= 2.5:
             return "洼地"
         return "坡地"
+
+    # ── 五行相律（土与水）：零新场，相态皆由既有场按律推导 ──
+    # 土：被水侵蚀则湿、湿甚为泥；水分大于泥则溃为沙；水少则干；水特别少则硬碎亦成沙
+    # 水：多则为流为海；少则为滴、为气（云者，水之蒸气也）
+
+    def 土相(self, y: int, x: int) -> str:
+        """土之相态：沙（极干硬碎或水蚀过甚）→ 干 → 土 → 泥。
+        五行相律（木克土/木固土）：近树之土，根柢盘结——纵水蚀极干，亦不易溃为沙。"""
+        m = float(self.moisture[y, x])
+        水蚀 = self.water[y, x] >= 1.5
+        极干 = m < 0.08
+        if 水蚀 or 极干:
+            # 木固土：两步之内有树盘根，则沙化难成，犹可为干
+            for t in self.trees:
+                if abs(t.y - y) <= 2 and abs(t.x - x) <= 2:
+                    return "干"
+            return "沙"
+        if m < 0.25:
+            return "干"
+        if m < 0.65:
+            return "土"
+        return "泥"
+
+    def 水相(self, y: int, x: int) -> str:
+        """水之相态：气（云者水之蒸气）→ 滴 → 流 → 海。"""
+        w = float(self.water[y, x])
+        if w >= 1.8:
+            return "海"      # 水多，体积变大，则为水流，再大是大海
+        if w >= 0.6:
+            return "流"
+        if w >= 0.15:
+            return "滴"
+        if self.cloud[y, x] >= 0.6:
+            return "气"      # 水少则或为水滴，或为水蒸气，或为空气中的水份
+        return "无"
+
+    def 火相(self, y: int, x: int) -> str:
+        """火之相态：无（无火）→ 星（将熄）→ 火 → 焰（旺）。
+        相由暖煦所及之内最强的一堆火定（火者，木之阳之缓释也）。"""
+        best = 0.0
+        for f in self.fires:
+            if abs(f.y - y) <= FIRE_WARM_RADIUS and abs(f.x - x) <= FIRE_WARM_RADIUS:
+                best = max(best, f.阳)
+        if best <= 0.0:
+            return "无"
+        if best < FIRE_EMBER:
+            return "星"      # 星火：将熄未熄，暖有余而炙不足
+        if best <= FIRE_BLAZE:
+            return "火"
+        return "焰"          # 焰：旺火，可烧陶熔金
 
     def grass_coverage(self) -> float:
         """草覆盖率（有草之格占比），供出生与天道判定。"""

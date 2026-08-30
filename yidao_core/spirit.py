@@ -44,12 +44,16 @@ from dataclasses import dataclass
 try:
     from .world import (World, Farm, Carrion, Fence, Fireplace, Item, Well,
                         TICKS_PER_DAY, is_night, FROST_AT, FIRE_FEED, BEASTS,
-                        WELL_DIG_TICKS, PATH_AT, PATH_COST, BODY2FIELD, DRINK_KEEP)
+                        WELL_DIG_TICKS, PATH_AT, PATH_COST, BODY2FIELD, DRINK_KEEP,
+                        ITEM_YANG, ITEM_YANG_TOOL, FIRE_YANG0, HUT_YANG0, 物形阴,
+                        YIN_HUT, YIN_FIRE, YIN_FENCE)
     from .qi import BEAST_FORM_YIN
 except ImportError:  # 允许 v6/fishbowl.py 以脚本方式直跑
     from world import (World, Farm, Carrion, Fence, Fireplace, Item, Well,
                        TICKS_PER_DAY, is_night, FROST_AT, FIRE_FEED, BEASTS,
-                       WELL_DIG_TICKS, PATH_AT, PATH_COST, BODY2FIELD, DRINK_KEEP)
+                       WELL_DIG_TICKS, PATH_AT, PATH_COST, BODY2FIELD, DRINK_KEEP,
+                       ITEM_YANG, ITEM_YANG_TOOL, FIRE_YANG0, HUT_YANG0, 物形阴,
+                       YIN_HUT, YIN_FIRE, YIN_FENCE)
     from qi import BEAST_FORM_YIN
 
 # ───────────────────────────────────────────
@@ -133,7 +137,7 @@ SEIZE_AGGR = 0.65       # 好斗度高于此值的无屋者才会起夺屋之念
 # ── 食物、材料与器物 ──
 # 食物营养（补阳）：熟食远高于生食；生食有致病风险
 FOOD_YANG = {"熟肉": 20.0, "熟鱼": 14.0, "生肉": 10.0, "生鱼": 8.0,
-             "蛋": 8.0, "奶": 8.0, "谷种": 6.0}
+             "蛋": 8.0, "奶": 8.0, "谷种": 6.0, "果": 7.0}
 RAW_KINDS = {"生肉", "生鱼"}
 RAW_SICK = 0.15         # 生食致病概率（腹泻 → 阳损 + 坏记忆）
 EAT_GRASS_GAIN = 14.0   # 野菜野草：能活，但算不上好日子
@@ -143,7 +147,7 @@ RECIPES = {"石斧": {"石": 1, "木": 1}, "石刀": {"石": 1}, "鱼竿": {"木
            "耒耜": {"木": 2}, "背篓": {"藤": 2}, "石矛": {"石": 1, "木": 1, "藤": 1},
            "棍棒": {"木": 1}}
 TOOL_PRIORITY = ["石斧", "石刀", "鱼竿", "石矛", "耒耜", "背篓", "棍棒"]
-WEAPON_BONUS = {"石矛": 0.50, "棍棒": 0.30, "石斧": 0.15, "石刀": 0.10}
+WEAPON_BONUS = {"金刃": 0.70, "石矛": 0.50, "棍棒": 0.30, "石斧": 0.15, "石刀": 0.10}
 CRAFT_TICKS = 4         # 制一件器所需念数
 CHOP_YIELD = 2          # 伐木一树所得（有石斧则 3）
 SKILL_GAIN = 0.04       # 每用一次，熟练微增（再受该域禀赋 20% 加成，见 _涨熟练）
@@ -205,10 +209,11 @@ RELIC_DAYS = 3          # 无主遗物留存日数，而后归还于土
 BAG_CAP = 14            # 行囊容量：人就一双手，背不动天下
 
 # 物品名义价值（交易公平感的尺度）
-ITEM_VALUE = {"熟肉": 4, "熟鱼": 3, "生肉": 3, "生鱼": 2, "蛋": 2, "奶": 2, "谷种": 1,
+ITEM_VALUE = {"熟肉": 4, "熟鱼": 3, "生肉": 3, "生鱼": 2, "蛋": 2, "奶": 2, "谷种": 1, "果": 1,
               "木": 2, "石": 2, "藤": 1, "骨": 1, "茅草": 1,
               "石斧": 8, "石刀": 6, "鱼竿": 7, "耒耜": 7, "背篓": 6, "石矛": 9, "棍棒": 5,
-              "土": 1, "美石": 2, "陶罐": 7, "寒衣": 8, "骨饰": 6, "美贝": SHELL_VALUE}
+              "土": 1, "美石": 2, "矿石": 3, "金块": 8, "金刃": 14,
+              "陶罐": 7, "寒衣": 8, "骨饰": 6, "美贝": SHELL_VALUE}
 
 # 角色名池（可扩展）
 NAMES = ["阿石", "禾", "石根", "葵", "麦", "岩", "泉", "桑",
@@ -897,9 +902,12 @@ class Spirit:
             衣 = next((it for it in self.bag if it.类型 == "寒衣"), None)
             if 衣 is not None:
                 逸散 += -气温 * 0.015 * 0.45   # 寒衣裹身，冷气侵骨减半
-                衣.阳 -= 0.03                # 寒气磨衣：衣会旧、会敝
+                耗 = min(0.03, 衣.阳)
+                衣.阳 -= 耗                  # 寒气磨衣：衣会旧、会敝
+                world.物归(self.y, self.x, 耗)
                 if 衣.阳 <= 0:
                     self.bag.remove(衣)
+                    world.物归(self.y, self.x, 物形阴("寒衣"))
                     self.remember("我的寒衣敝了", "器损", None, 0.40, tick)
                     report(tick, (self.y, self.x),
                            f"{self.name} 的寒衣散成了碎藤（因：寒气磨衣，阳尽则敝）",
@@ -912,16 +920,20 @@ class Spirit:
         world.water[self.y, self.x] += 排 * BODY2FIELD   # 汗溺之排，就地还场（水过身体，终还于土）
 
         # 随身物什各按其材质腐坏（寒慢热快）；陶罐藏粮，腐坏减半。
+        # 腐者之量就地归还炁场（物归）；腐尽之形阴亦还——消亡之处肥其土。
         # 存粮腐坏是锥心之痛——痛一次，积一分烧土为瓮之思。
         有罐 = any(it.类型 == "陶罐" for it in self.bag)
         坏食 = []
         存 = []
         for it in self.bag:
             藏 = 0.55 if (有罐 and it.类型 in FOOD_YANG) else 1.0
+            旧 = it.阳
             if it.腐一步(气温, 藏=藏):
+                world.物归(self.y, self.x, 旧 + 物形阴(it.类型))
                 if it.类型 in FOOD_YANG:
                     坏食.append(it.类型)
             else:
+                world.物归(self.y, self.x, 旧 - it.阳)
                 存.append(it)
         self.bag = 存
         if 坏食 and rng.random() < 0.5:
@@ -1183,9 +1195,14 @@ class Spirit:
         return 可食[0]
 
     def _吃(self, world: World, it: Item, tick: int, report, rng):
-        """吃下一份食物。熟食养人；生食有病患之险。"""
+        """吃下一份食物：食物之结解开——其阳转入我身（食转，C→B），
+        其形阴与我身纳不尽之余归还炁场（物归）。腐食不养人：腐了多少，养分就少多少。
+        熟食养人；生食有病患之险。"""
         self.bag.remove(it)
-        self._泵阳(world, FOOD_YANG[it.类型])     # 食入之阳，记日月之泵
+        受 = min(100.0 - self.yang, it.阳)
+        self.yang += 受
+        world.账.食转 += 受
+        world.物归(self.y, self.x, (it.阳 - 受) + 物形阴(it.类型))
         self.stats["进食"] += 1
         # 吃过一口熟食，便想学这手艺——吃一口积一分
         if it.类型 in ("熟肉", "熟鱼"):
@@ -1234,7 +1251,7 @@ class Spirit:
                     得手率 = 0.55 * (1.5 if 有竿 else 1.0)
                     if rng.random() < 得手率:
                         world.fish[ny, nx] -= 0.8
-                        self.bag.append(Item("生鱼"))
+                        self._得物(world, "生鱼")      # 渔获：鱼自水域入链，记源C
                         self._涨熟练("渔猎")
                         if 有竿:
                             self._磨损("鱼竿", tick, report)
@@ -2377,14 +2394,26 @@ class Spirit:
             刀 = self._有器("石刀")
             肉 = c.肉 if 刀 else max(1, c.肉 - 1)
             for _ in range(肉):
-                self.bag.append(Item("生肉"))
+                self._得物(world, "生肉")       # 尸为泵所养之生物质，肢解入链记源C
             for _ in range(c.骨 if 刀 else (1 if c.骨 and self._数料("骨") < 2
                                             and ({"缝纫", "制器"} & self.knowledge) else 0)):
-                self.bag.append(Item("骨"))
+                self._得物(world, "骨")
             world.carrions.remove(c)
             report(tick, (self.y, self.x),
                    f"{self.name} 肢解了{c.名}的尸骸，得肉{肉}（因：{'石刀之利' if 刀 else '徒手可及'}）",
                    kind="屠宰", actor=self.name)
+            return True
+        # 采果：果树暖季结实，近者可采——木之实，泵所养之生物质入链
+        for t in world.trees:
+            if not t.果树 or t.果数 <= 0:
+                continue
+            if abs(t.y - self.y) > 1 or abs(t.x - self.x) > 1:
+                continue
+            t.果数 -= 1
+            self._得物(world, "果")
+            report(tick, (self.y, self.x),
+                   f"{self.name} 从果树上采了一枚果（因：暖季结实+伸手可及）",
+                   kind="采果", actor=self.name)
             return True
         # 伐木
         for tree in world.trees:
@@ -2395,7 +2424,7 @@ class Spirit:
             斧 = self._有器("石斧")
             tree.阳 -= 40 if 斧 else 55
             for _ in range(CHOP_YIELD + (1 if 斧 else 0)):
-                self.bag.append(Item("木"))
+                self._得物(world, "木")         # 伐木得薪：木自生物质入链，记源C
             if 斧:
                 self._磨损("石斧", tick, report)
             if tree.阳 <= 0:
@@ -2406,16 +2435,22 @@ class Spirit:
             self._积学("制器", 10.0, tick, report,
                        "伐木时忽有所悟：木石可成器，是为制器", "劳作日久")
             return True
-        # 采石（高地）：石中偶有美者——美石是饰品的料
+        # 采石（高地）：石中偶有含金的矿石与美者——金出石中，美石是饰品的料
         if world.height[self.y, self.x] >= 6.5 and world.stone[self.y, self.x] >= 1.0:
             world.stone[self.y, self.x] -= 1.0
-            if rng.random() < 0.15 and self._数料("美石") < 2:
-                self.bag.append(Item("美石"))
+            r石 = rng.random()
+            if r石 < 0.12 and self._数料("矿石") < 3:
+                self._得物(world, "矿石")
+                report(tick, (self.y, self.x),
+                       f"{self.name} 采得一块矿石（因：高地有石+石中含金）",
+                       kind="采石", actor=self.name)
+            elif r石 < 0.27 and self._数料("美石") < 2:
+                self._得物(world, "美石")
                 report(tick, (self.y, self.x),
                        f"{self.name} 采得一枚美石（因：高地有石+石中美者）",
                        kind="采石", actor=self.name)
             else:
-                self.bag.append(Item("石"))
+                self._得物(world, "石")
                 report(tick, (self.y, self.x),
                        f"{self.name} 采得一块石头（因：高地有石）",
                        kind="采石", actor=self.name)
@@ -2425,23 +2460,24 @@ class Spirit:
         # 采藤（水泽边）
         if world.vine[self.y, self.x] >= 1.0:
             world.vine[self.y, self.x] -= 1.0
-            self.bag.append(Item("藤"))
+            self._得物(world, "藤")
             report(tick, (self.y, self.x),
                    f"{self.name} 采得一把藤蔓（因：泽畔有藤）",
                    kind="采藤", actor=self.name)
             return True
-        # 掘土（泽畔河泥，制陶之料）
-        if "制陶" in self.knowledge and self._数料("土") < POTTERY_CLAY \
+        # 掘土（泽畔河泥，制陶之料）：掘得何物，取决于土相——泥与土得土，沙处得沙
+        if "制陶" in self.knowledge and self._数料("土") + self._数料("沙") < POTTERY_CLAY \
                 and world.moisture[self.y, self.x] > 0.45 and world.water[self.y, self.x] < 1.5:
-            self.bag.append(Item("土"))
+            相 = world.土相(self.y, self.x)
+            self._得物(world, "沙" if 相 == "沙" else "土")
             report(tick, (self.y, self.x),
-                   f"{self.name} 掘取河泥得土（因：制陶之需）",
+                   f"{self.name} 掘取河泥得{'沙' if 相 == '沙' else '土'}（因：制陶之需+其地为{相}）",
                    kind="采土", actor=self.name)
             return True
         # 采贝：水泽边俯拾，低概率得美贝——天然稀缺，贝币之雏形
         if world.moisture[self.y, self.x] > 0.45 and world.water[self.y, self.x] < 1.5 \
                 and self._数料("美贝") < 4 and rng.random() < 0.010:
-            self.bag.append(Item("美贝"))
+            self._得物(world, "美贝")
             report(tick, (self.y, self.x),
                    f"{self.name} 拾得一枚美贝（因：水泽俯拾+天然稀缺）",
                    kind="得贝", actor=self.name)
@@ -2592,8 +2628,10 @@ class Spirit:
             # 屋漏则修：一份建材补一回阳；无料则采——修缮也要有备料
             if self.hut.阳 < HUT_OWN_REPAIR_AT:
                 if self._建材数() >= 1 and (self.y, self.x) == (self.hut.y, self.hut.x):
-                    self._取建材()
+                    料 = self._取建材()
+                    旧 = self.hut.阳
                     self.hut.阳 = min(80.0, self.hut.阳 + HUT_REPAIR)
+                    self._转化(world, [料], self.hut.阳 - 旧)   # 修缮：料之结系回屋上
                     report(tick, (self.y, self.x),
                            f"{self.name} 修缮了自家茅屋（因：风雨剥蚀，屋阳将亏）",
                            kind="修缮", actor=self.name)
@@ -2601,7 +2639,7 @@ class Spirit:
                 if self._建材数() < 1:
                     if world.grass[self.y, self.x] >= GATHER_GRASS_MIN:
                         world.grass[self.y, self.x] -= 0.4
-                        self.bag.append(Item("茅草"))
+                        self._得物(world, "茅草")
                         self._耗阳(0.15)
                         report(tick, (self.y, self.x),
                                f"{self.name} 割取茅草（因：修缮之需）",
@@ -2627,7 +2665,7 @@ class Spirit:
         if self._建材数() < MATERIAL_NEED:
             if world.grass[self.y, self.x] >= GATHER_GRASS_MIN:
                 world.grass[self.y, self.x] -= 0.4
-                self.bag.append(Item("茅草"))
+                self._得物(world, "茅草")
                 self._耗阳(0.15)
                 report(tick, (self.y, self.x),
                        f"{self.name} 割取茅草（因：营造之需）",
@@ -2664,9 +2702,9 @@ class Spirit:
         进度 += 1
         self._工地 = (ty, tx, 进度)
         if 进度 >= BUILD_TICKS:
-            for _ in range(MATERIAL_NEED):
-                self._取建材()
+            料单 = [self._取建材() for _ in range(MATERIAL_NEED)]
             self.hut = world.add_building(ty, tx, self.name)
+            self._转化(world, 料单, HUT_YANG0 + YIN_HUT)   # 材之结解开，屋之结系上
             self._known_huts[self.name] = (ty, tx)
             self._工地 = None
             self.mood["希望"] = 1.0
@@ -2756,6 +2794,9 @@ class Spirit:
         if 进度 >= WELL_DIG_TICKS:
             self._井地 = None
             world.wells.append(Well(ty, tx, self.name))
+            # 井非阴阳凝聚之物，乃地形之变：水脉本在地底，人只是把泥土掘开——
+            # 与径同类（众脚踏出来的地形之变），不入器物账；旬日劳作之阳
+            # 已通过 _耗阳 归还炁场，那是汗水唯一的能量去向
             self._known_wells[(ty, tx)] = self.name
             self._涨熟练("凿井")
             self.mood["希望"] = min(1.0, self.mood["希望"] + 0.3)
@@ -2844,13 +2885,18 @@ class Spirit:
         return True
 
     def _磨损(self, 类型: str, tick: int, report):
-        """工具会磨损；阳尽断裂。"""
+        """工具会磨损；阳尽断裂。损者与断者之形，皆归还炁场。"""
         it = next((i for i in self.bag if i.类型 == 类型), None)
         if it is None:
             return
-        it.阳 -= 1.5
+        耗 = min(1.5, it.阳)
+        it.阳 -= 耗
+        if self._世界 is not None:
+            self._世界.物归(self.y, self.x, 耗)
         if it.阳 <= 0:
             self.bag.remove(it)
+            if self._世界 is not None:
+                self._世界.物归(self.y, self.x, 物形阴(类型))
             self.remember(f"我的{类型}用断了", "器损", None, 0.45, tick)
             report(tick, (self.y, self.x),
                    f"{self.name} 的{类型}断了（因：磨损日久，阳尽则断）",
@@ -2884,6 +2930,7 @@ class Spirit:
             self._涨熟练("取火")
             屋内 = self.hut is not None and (self.y, self.x) == (self.hut.y, self.hut.x)
             world.fires.append(Fireplace(self.y, self.x, self.name, 屋内=屋内))
+            self._转化(world, [柴], FIRE_YANG0 + YIN_FIRE)   # 柴之结化火之结
             self._known_fires[self.name] = (self.y, self.x)
             self.mood["希望"] = min(1.0, self.mood["希望"] + 0.3)
             report(tick, (self.y, self.x),
@@ -2893,6 +2940,7 @@ class Spirit:
             if "烹饪" in self.knowledge:
                 self._烹制(world, tick, report, rng)
         else:
+            self._转化(world, [柴], 0.0)     # 未得火：柴之结散归炁场
             self._耗阳(0.4)
             report(tick, (self.y, self.x),
                    f"{self.name} 钻木良久，未得火（因：手生）",
@@ -2938,6 +2986,7 @@ class Spirit:
         self.bag.remove(生)
         熟 = "熟肉" if 生.类型 == "生肉" else "熟鱼"
         self.bag.append(Item(熟))
+        self._转化(world, [生], ITEM_YANG[熟] + 物形阴(熟))   # 火炙：生之结化熟之结
         self._涨熟练("烹饪")
         self.mood["希望"] = min(1.0, self.mood["希望"] + 0.1)
         初次 = self.stats.get("烹食", 0) == 0
@@ -2953,13 +3002,15 @@ class Spirit:
         if self.knowledge & {"制器", "取火", "畜牧", "制陶", "缝纫"}:
             if self._备料(world, tick, report, rng):
                 return True
-        # 添柴：自家的火，阳亏则续一份木——火要靠养
+        # 添柴：自家的火，阳亏则续一份木——火要靠养；柴之结化火之阳
         for f in world.fires:
             if f.主人 == self.name and f.阳 < 30.0 \
                     and abs(f.y - self.y) <= 2 and abs(f.x - self.x) <= 2 \
                     and self._数料("木") >= 1:
-                self._取料("木")
+                料 = self._取料("木")
+                旧 = f.阳
                 f.阳 = min(80.0, f.阳 + FIRE_FEED)
+                self._转化(world, [料], f.阳 - 旧)
                 report(tick, (f.y, f.x),
                        f"{self.name} 给火堆添了柴（因：火阳将亏）",
                        kind="添柴", actor=self.name)
@@ -2971,56 +3022,84 @@ class Spirit:
                     continue
                 料 = RECIPES[器]
                 if all(self._数料(k) >= v for k, v in 料.items()):
-                    for k, v in 料.items():
-                        for _ in range(v):
-                            self._取料(k)
+                    料单 = [self._取料(k) for k, v in 料.items() for _ in range(v)]
                     if rng.random() < 0.5 + 0.5 * self._熟练("制器"):
                         self.bag.append(Item(器))
+                        self._转化(world, 料单, ITEM_YANG_TOOL + 物形阴(器))
                         self._涨熟练("制器")
                         report(tick, (self.y, self.x),
                                f"{self.name} 制成了{器}（因：制器之技+材料齐备）",
                                kind="制器", actor=self.name)
                     else:
+                        self._转化(world, 料单, 0.0)     # 制器败：料之结散归炁场
                         self._耗阳(0.3)
                         report(tick, (self.y, self.x),
                                f"{self.name} 制{器}失败，费了些材料（因：手艺生疏）",
                                kind="制器败", actor=self.name)
                     return True
-        # 制陶：知法 + 有土 + 窑/火堆旁才能烧
+        # 冶炼（火克金）：知制器 + 有矿石 + 焰火旺——矿石入火，金自石出
+        if "制器" in self.knowledge and self._数料("矿石") >= 1 \
+                and world.火相(self.y, self.x) == "焰":
+            料单 = [self._取料("矿石")]
+            self.bag.append(Item("金块"))
+            self._转化(world, 料单, ITEM_YANG["金块"] + 物形阴("金块"))
+            self._涨熟练("制器")
+            report(tick, (self.y, self.x),
+                   f"{self.name} 就焰火炼出一块金块（因：火克金+矿石入火，金自石出）",
+                   kind="冶炼", actor=self.name)
+            return True
+        # 锻打：金块与木，就焰火锻成金刃——金刃之利，远胜石器
+        if "制器" in self.knowledge and not self._有器("金刃") \
+                and self._数料("金块") >= 1 and self._数料("木") >= 1 \
+                and world.火相(self.y, self.x) == "焰":
+            料单 = [self._取料("金块"), self._取料("木")]
+            self.bag.append(Item("金刃"))
+            self._转化(world, 料单, ITEM_YANG_TOOL + 物形阴("金刃"))
+            self._涨熟练("制器")
+            report(tick, (self.y, self.x),
+                   f"{self.name} 就焰火锻成一柄金刃（因：锻打之工+金木齐备）",
+                   kind="锻打", actor=self.name)
+            return True
+        # 制陶：知法 + 有土或沙（土与沙皆可成陶）+ 旺火在旁才能烧（星火难成器）
         if "制陶" in self.knowledge and not self._有器("陶罐") \
-                and self._数料("土") >= POTTERY_CLAY:
-            if world.fire_near(self.y, self.x) is None:
-                if self._赴火(world, tick, rng):
-                    return True
-            else:
-                for _ in range(POTTERY_CLAY):
-                    self._取料("土")
+                and self._数料("土") + self._数料("沙") >= POTTERY_CLAY:
+            if world.火相(self.y, self.x) in ("火", "焰"):
+                料单 = [(self._取料("土") or self._取料("沙"))
+                        for _ in range(POTTERY_CLAY)]
                 if rng.random() < 0.5 + 0.5 * self._熟练("制陶"):
                     self.bag.append(Item("陶罐"))
+                    self._转化(world, 料单, ITEM_YANG["陶罐"] + 物形阴("陶罐"))
                     self._涨熟练("制陶")
                     report(tick, (self.y, self.x),
                            f"{self.name} 和泥成坯，就火烧成一只陶罐（因：制陶之技+火边烧制）",
                            kind="制陶", actor=self.name)
                 else:
+                    self._转化(world, 料单, 0.0)     # 裂坯：土之结散归炁场
                     self._耗阳(0.3)
                     report(tick, (self.y, self.x),
                            f"{self.name} 烧陶裂了坯，费了些土（因：手艺生疏）",
                            kind="制陶败", actor=self.name)
                 return True
+            # 无火或火弱（星火难烧陶）：自钻新火，或赴他处之旺火
+            if "取火" in self.knowledge and not world.raining_on(self.y, self.x) \
+                    and any(self._数料(k) >= 1 for k in ("木", "茅草", "藤")):
+                return self._钻木(world, tick, report, rng)
+            if self._赴火(world, tick, rng):
+                return True
         # 缝纫：以藤为线、以骨为针——寒衣御寒，骨饰传情
         if "缝纫" in self.knowledge:
             if not self._有器("寒衣") and self._数料("藤") >= SEW_TICKS_VINE \
                     and self._数料("骨") >= 1:
-                self._取料("藤")
-                self._取料("藤")
-                self._取料("骨")
+                料单 = [self._取料("藤"), self._取料("藤"), self._取料("骨")]
                 if rng.random() < 0.5 + 0.5 * self._熟练("缝纫"):
                     self.bag.append(Item("寒衣"))
+                    self._转化(world, 料单, ITEM_YANG["寒衣"] + 物形阴("寒衣"))
                     self._涨熟练("缝纫")
                     report(tick, (self.y, self.x),
                            f"{self.name} 以藤为线、以骨为针，缝成一件寒衣（因：寒夜受冻+缝纫之技）",
                            kind="缝纫", actor=self.name)
                 else:
+                    self._转化(world, 料单, 0.0)     # 走针：藤骨之结散归炁场
                     self._耗阳(0.3)
                     report(tick, (self.y, self.x),
                            f"{self.name} 缝衣走了针，费了些藤骨（因：手艺生疏）",
@@ -3031,15 +3110,20 @@ class Spirit:
         if ("缝纫" in self.knowledge or "制器" in self.knowledge) \
                 and not self._有器("骨饰") and self.affinity > 0.4 \
                 and self._数料("骨") >= 1:
-            self._取料("骨")
-            镶 = self._取料("美石") is not None
+            料单 = [self._取料("骨")]
+            美石 = self._取料("美石")
+            镶 = 美石 is not None
+            if 镶:
+                料单.append(美石)
             if rng.random() < 0.5 + 0.5 * max(self._熟练("缝纫"), self._熟练("制器")):
                 self.bag.append(Item("骨饰"))
+                self._转化(world, 料单, ITEM_YANG["骨饰"] + 物形阴("骨饰"))
                 self._涨熟练("缝纫")
                 report(tick, (self.y, self.x),
                        f"{self.name} {'琢骨镶石' if 镶 else '琢骨'}，成一枚骨饰（因：爱美之心+闲工）",
                        kind="琢饰", actor=self.name)
             else:
+                self._转化(world, 料单, 0.0)     # 崩角：骨石之结散归炁场
                 self._耗阳(0.3)
                 report(tick, (self.y, self.x),
                        f"{self.name} 琢饰崩了角，费了些骨石（因：手艺生疏）",
@@ -3131,8 +3215,7 @@ class Spirit:
         if 我栏 is None:
             # 建栏于栖身所旁：需木二
             if self._数料("木") >= 2:
-                self._取料("木")
-                self._取料("木")
+                料单 = [self._取料("木"), self._取料("木")]
                 hy, hx = self._栖身所()
                 for dy in (0, 1, -1, 2, -2):
                     for dx in (0, 1, -1, 2, -2):
@@ -3140,6 +3223,7 @@ class Spirit:
                         if world.in_bounds(ny, nx) and world.water[ny, nx] < 1.0 \
                                 and world.building_at(ny, nx) is None:
                             world.fences.append(Fence(ny, nx, self.name))
+                            self._转化(world, 料单, 60.0 + YIN_FENCE)   # 木之结化栏之结
                             report(tick, (ny, nx),
                                    f"{self.name} 立起一圈围栏（因：畜牧之志+木料齐备）",
                                    kind="建栏", actor=self.name)
@@ -3154,14 +3238,14 @@ class Spirit:
             if abs(a.y - self.y) > 1 or abs(a.x - self.x) > 1:
                 continue
             if a.种类 == "鸡":
-                self.bag.append(Item("蛋"))
+                self._得物(world, "蛋")     # 鸡之所产：泵所养之生物质入链
                 a.产物念 = p["蛋期"]
                 self._涨熟练("畜牧")
                 report(tick, (self.y, self.x),
                        f"{self.name} 从鸡窝里拾了一枚蛋（因：畜牧之劳）",
                        kind="收蛋", actor=self.name)
                 return True
-            self.bag.append(Item("奶"))
+            self._得物(world, "奶")         # 畜之所产：泵所养之生物质入链
             a.产物念 = p["奶期"]
             self._涨熟练("畜牧")
             report(tick, (self.y, self.x),
@@ -3324,6 +3408,19 @@ class Spirit:
         旧 = self.yang
         self.yang = min(100.0, self.yang + 量)
         world.账.泵 += self.yang - 旧
+
+    def _得物(self, world: World, 类型: str):
+        """自生物质/太古遗泽得物（采集、伐木、渔获、屠宰、收蛋挤奶）：
+        记源C——物质从泵的领地进入万物之链。"""
+        self.bag.append(Item(类型))
+        world.源C(ITEM_YANG.get(类型, ITEM_YANG_TOOL) + 物形阴(类型))
+
+    def _转化(self, world: World, 料单: list, 成品能: float):
+        """转化结算：旧结解开、新结系上。耗料之（阳+形阴）与成品之（阳+形阴）
+        的差额归还炁场（物归；不足则负，炁场补之）——斧不是被造出来的，
+        是木与石的结解开、在工匠手中重新系上的。"""
+        料能 = sum(it.阳 + 物形阴(it.类型) for it in 料单 if it is not None)
+        world.物归(self.y, self.x, 料能 - 成品能)
 
     def _死否(self, world: World, tick: int, report, 因: str, spirits: list = ()) -> bool:
         """阳尽则亡：遗体成尸骨印记（带姓名，供故人悼念），保质约 2 日后化为土。
