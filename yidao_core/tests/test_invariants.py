@@ -175,6 +175,36 @@ def test_long_run():
     ok("世界无史", not 历史嫌疑, f"{历史嫌疑}")
 
 
+# ── 8.5 侏罗纪缸（纯兽世界：食物链活着，守恒不破）─────────
+def test_jurassic():
+    import collections
+    ev = []
+    s = Session.genesis(seed=123, 生灵=False, 兽群="侏罗纪",
+                        on_event=lambda **kw: ev.append(kw))
+    ok("侏罗纪·无灵开缸", len(s.spirits) == 0 and len(s.world.animals) > 0,
+       f"兽 {len(s.world.animals)}")
+    w = s.world
+    A0 = w.水总量A(s.spirits)
+    B0 = w.能量总量B(s.spirits)
+    C0 = w.万物总量C(s.spirits)
+    s.run(TICKS_PER_DAY * 30)
+    # 食物链活着：猎杀真实发生
+    猎 = sum(1 for e in ev if e["kind"] == "猎杀")
+    ok("侏罗纪·猎杀真实发生", 猎 > 0, f"猎杀 {猎} 起")
+    # 守恒：无灵之缸，三域恒等式纹丝不动
+    dA = abs(w.水总量A(s.spirits) - A0 - w.账.越界A)
+    dB = abs(w.能量总量B(s.spirits) - B0
+             - (w.账.泵 - w.账.草汲 + w.账.物归 + w.账.食转 + w.账.越界B))
+    dC = abs(w.万物总量C(s.spirits) - C0
+             - (w.账.源C - w.账.物归 - w.账.食转 + w.账.越界C))
+    ok("侏罗纪·水文守恒", dA < 1e-6 * max(A0, 1.0), f"差 {dA:.2e}")
+    ok("侏罗纪·能量守恒", dB < 1e-6 * max(B0, 1.0), f"差 {dB:.2e}")
+    ok("侏罗纪·器物守恒", dC < 1e-6 * max(C0, 1.0), f"差 {dC:.2e}")
+    # 种群兴衰有序：有新生，亦有存续
+    ok("侏罗纪·种群有继", len(w.animals) > 0,
+       f"30 日存 {dict(collections.Counter(a.种类 for a in w.animals))}")
+
+
 # ── 9.5 五行相律（土与水）─────────────────────
 def test_phases():
     w = World(seed=42)
@@ -227,6 +257,25 @@ def test_phases():
     ok("相律·果树结实", t2.果数 > 0, f"果数 {t2.果数}")
 
 
+# ── 9.6 组件独立（M2b：灵是一束可拆可立的组件）──────────
+def test_components():
+    from yidao_core.spirit import (Body, Genome, Mind, Desire, Knowledge,
+                                   Property, Relations, Remembrance, Intel, Itinerary)
+    for cls in (Body, Genome, Mind, Desire, Knowledge,
+                Property, Relations, Remembrance, Intel, Itinerary):
+        c = cls()      # 组件可独立实例化——脱离灵而立
+        assert c is not None
+    ok("组件·十组件独立可立", True)
+    # 路由桥不吞字段：灵之扁平读写与组件读写是同一处
+    s = Session.genesis(seed=42)
+    x = s.spirits[0]
+    x.yang = 55.0
+    ok("组件·路由桥读写同一", x.身.yang == 55.0 and x.yang == x.身.yang,
+       f"身.yang {x.身.yang}")
+    x.心.mood["希望"] = 0.9
+    ok("组件·心情路由同一", x.mood["希望"] == 0.9)
+
+
 # ── 10. 死寂重启（天道守道不救生）──────────────
 def test_stagnation_stir():
     s = Session.genesis(seed=42)
@@ -259,6 +308,8 @@ if __name__ == "__main__":
     test_determinism()
     test_long_run()
     test_phases()
+    test_components()
+    test_jurassic()
     test_stagnation_stir()
     print("─" * 40)
     print(f"全部通过（{PASS} 项断言）。世界的严密性已被断言，而非感觉。")

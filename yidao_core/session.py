@@ -49,32 +49,37 @@ class Session:
         self.tiandao = Tiandao(world, self._emit)
         self._名池 = NAMES[:]
         self.rng.shuffle(self._名池)
+        self.生灵 = True          # 灵之开关：侏罗纪缸为 False（无灵凝聚）
 
     # ── 创世 ────────────────────────────────
 
     @classmethod
     def genesis(cls, seed: int = 42, size: int = WORLD_SIZE,
-                spirits: int = INITIAL_SPIRITS, init_map=None, on_event=None):
-        """从无到有：炁场自组织出世界，众灵诞生于阴阳交界之处。"""
-        world = World(seed=seed, size=size, init_map=init_map)
+                spirits: int = INITIAL_SPIRITS, init_map=None, on_event=None,
+                生灵: bool = True, 兽群: str = "田园"):
+        """从无到有：炁场自组织出世界，众灵诞生于阴阳交界之处。
+        生灵=False 则开纯兽之缸（侏罗纪：无灵初诞，亦无自然凝聚）。"""
+        world = World(seed=seed, size=size, init_map=init_map, 兽群=兽群)
         rng = random.Random(seed ^ 0x5EED)
         名池 = NAMES[:]
         rng.shuffle(名池)
         cells = 界面点(world.height, world.water)
         ss: list[Spirit] = []
-        for i in range(spirits):
-            if cells:
-                y, x = cells[i % len(cells)]
-            else:
-                y, x = size // 2, size // 2
-            # 凝聚之处的水土写入初代 DNA：河边生者善渔，高燥多材者善营造
-            s = Spirit(名池[i % len(名池)], y, x, 0, rng,
-                       env=环境印记(world, y, x))
-            s._世界 = world
-            world.生灵入账(s)     # 太初众灵亦自炁凝聚：初阳与形阴自炁场抽取
-            ss.append(s)
+        if 生灵:
+            for i in range(spirits):
+                if cells:
+                    y, x = cells[i % len(cells)]
+                else:
+                    y, x = size // 2, size // 2
+                # 凝聚之处的水土写入初代 DNA：河边生者善渔，高燥多材者善营造
+                s = Spirit(名池[i % len(名池)], y, x, 0, rng,
+                           env=环境印记(world, y, x))
+                s._世界 = world
+                world.生灵入账(s)     # 太初众灵亦自炁凝聚：初阳与形阴自炁场抽取
+                ss.append(s)
         session = cls(world, ss, seed, on_event)
         session._名池 = 名池
+        session.生灵 = 生灵
         return session
 
     def seed_at(self, y: int, x: int):
@@ -133,8 +138,9 @@ class Session:
         self.tiandao.check(tick, self.spirits)
 
         # 自然凝聚：世界丰饶且灵数未满时，低概率于丰饶水泽边凝聚新灵
+        # （侏罗纪缸生灵=False：无灵凝聚，世界纯由兽群演绎）
         alive_n = sum(1 for s in self.spirits if s.alive)
-        if alive_n < MAX_SPIRITS and world.grass_coverage() > BIRTH_COVERAGE \
+        if self.生灵 and alive_n < MAX_SPIRITS and world.grass_coverage() > BIRTH_COVERAGE \
                 and self.rng.random() < BIRTH_CHANCE:
             spots = world.rich_spots()
             if spots:

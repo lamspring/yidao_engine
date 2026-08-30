@@ -117,14 +117,12 @@ VINE_GROW = 0.010       # 藤蔓生长率
 
 # ── 走兽：阴阳同构，凝聚得阳而生，阳尽而死 ──
 ANIMAL_MAX = 45
-# 种类 → (初生阳, 阳上限, 每念逸散, 寿命念数, 食谱)
-BEASTS = {
-    "鸡": dict(阳=40.0, 逸散=0.045, 寿命=8 * TICKS_PER_DAY, 食="虫", 蛋期=48),
-    "羊": dict(阳=80.0, 逸散=0.05, 寿命=16 * TICKS_PER_DAY, 食="草", 奶期=64),
-    "牛": dict(阳=120.0, 逸散=0.06, 寿命=24 * TICKS_PER_DAY, 食="草", 奶期=64),
-}
-BREED_CHANCE = 0.012    # 温饱成对的野兽每念繁殖概率
-FLEE_RADIUS = 2         # 野兽见生人而逃的半径
+# 兽种表已迁入兽层（beast.py）：食性、体型、群性、勇怯皆入表；
+# 灵之世代畜牧所需（蛋期/奶期）亦在其中。此处转口，向后兼容。
+from . import beast as _beast_mod
+BEASTS = _beast_mod.BEASTS
+BREED_CHANCE = _beast_mod.BREED_CHANCE
+FLEE_RADIUS = _beast_mod.FLEE_RADIUS
 CARRION_YANG = 25.0     # 尸骸初始阳（腐坏尽则归土）
 CARRION_DECAY = 0.8     # 尸骸每念腐坏
 
@@ -288,7 +286,8 @@ class Carrion:
 
 @dataclass
 class Animal:
-    """走兽：轻量个体。吃草/饮水/受惊逃/繁殖/衰老死亡——与灵同一个阴阳模型。"""
+    """走兽：轻量个体。吃草/饮水/受惊逃/繁殖/衰老死亡——与灵同一个阴阳模型。
+    亦有体水（水过兽身，总量不变）；野性本能循环见兽层（beast.py）。"""
     种类: str
     y: int
     x: int
@@ -297,6 +296,7 @@ class Animal:
     驯主: str | None = None
     栏位: tuple | None = None     # 圈养锚点
     产物念: int = 0               # 距下次下蛋/可挤奶的剩余念数
+    水分: float = 80.0            # 体水：渴则饮，汗溺还场
 
     @property
     def 驯化(self) -> bool:
@@ -346,8 +346,10 @@ class Well:
 class World:
     """鱼缸世界：只有此刻，不存历史。"""
 
-    def __init__(self, seed: int, size: int = WORLD_SIZE, init_map=None):
-        """创世两条路：不给分布图，则从炁场自生（道生一）；给分布图，则以图为炁。"""
+    def __init__(self, seed: int, size: int = WORLD_SIZE, init_map=None,
+                 兽群: str = "田园"):
+        """创世两条路：不给分布图，则从炁场自生（道生一）；给分布图，则以图为炁。
+        兽群：田园（鸡羊牛，灵之世代的畜牧对象）/ 侏罗纪（角龙梁龙迅猛龙）。"""
         self.size = size
         self.tick = 0
         self._rng = np.random.default_rng(seed)
@@ -418,15 +420,13 @@ class World:
             if self.moisture is not None:
                 self.trees.append(Tree(y, x, float(self._rng.uniform(20, 90)),
                                        果树=bool(self._rng.random() < 0.3)))
-        for 种类, 数 in (("鸡", 6), ("羊", 4), ("牛", 3)):
+        群 = {"田园": {"鸡": 6, "羊": 4, "牛": 3},
+              "侏罗纪": {"角龙": 6, "梁龙": 2, "迅猛龙": 4, "始祖鸟": 5}}[兽群]
+        for 种类, 数 in 群.items():
             for _ in range(数):
                 y, x = int(self._rng.integers(0, size)), int(self._rng.integers(0, size))
-                p = BEASTS[种类]
-                # 创世兽群亦自炁凝聚：初阳与形阴自炁场抽取（与众生同一来去）
-                实阳, 实阴 = self.qi.抽取(y, x, 阳=p["阳"],
-                                          阴=BEAST_FORM_YIN.get(种类, 10.0))
-                self.账.越界B += (p["阳"] - 实阳) + (BEAST_FORM_YIN.get(种类, 10.0) - 实阴)
-                self.animals.append(Animal(种类, y, x, p["阳"], 产物念=int(self._rng.integers(0, 64))))
+                # 创世兽群亦自炁凝聚：初阳形阴体水皆有所出（兽生落地即壮年）
+                _beast_mod.兽生(self, 种类, y, x, self._rng)
 
         # 预流：让世界先静转两日，风云水草各归其位
         for _ in range(TICKS_PER_DAY * 2):
@@ -770,30 +770,25 @@ class World:
     # ───────────────────────────────────────
 
     def _生态步(self, spirits: list):
+        """圈养者守旧制（栏畔牲畜）；野性者入兽层本能循环（见 beast.py）。"""
         rng = self._rng
         for a in list(self.animals):
+            if a not in self.animals:
+                continue
             p = BEASTS[a.种类]
-            扣 = min(a.阳, p["逸散"])          # 阳之逸散：就地归还炁场（洒水壶，走到哪撒到哪）
-            a.阳 -= 扣
-            self.qi.归还(a.y, a.x, 阳=扣)
-            a.年龄 += 1
-            a.产物念 = max(0, a.产物念 - 1)
-
-            # 衰老病死：阳尽则亡，余阳与形阴尽数归还（倾覆）；尸骸归土
-            if a.阳 <= 0 or a.年龄 > p["寿命"] * rng.uniform(0.9, 1.1):
-                self.animals.remove(a)
-                self.qi.归还(a.y, a.x, 阳=max(0.0, a.阳),
-                             阴=BEAST_FORM_YIN.get(a.种类, 10.0))
-                肉, 骨 = {"鸡": (2, 1), "羊": (4, 2), "牛": (6, 3)}[a.种类]
-                self.carrions.append(Carrion(a.y, a.x, 肉, 骨, 名=a.种类))
-                if a.驯主:
+            # 圈养者：守在栏畔，不肯走远
+            if a.驯化 and a.栏位 is not None:
+                扣 = min(a.阳, p["逸散"])
+                a.阳 -= 扣
+                self.qi.归还(a.y, a.x, 阳=扣)
+                a.年龄 += 1
+                a.产物念 = max(0, a.产物念 - 1)
+                if a.阳 <= 0 or a.年龄 > p["寿日"] * TICKS_PER_DAY * rng.uniform(0.9, 1.1):
+                    _beast_mod.兽亡(self, a)
                     self._events.append({
                         "kind": "畜死", "pos": (a.y, a.x), "actor": a.驯主,
                         "text": f"{a.驯主} 的{a.种类}病死了（因：饲养不周，阳尽则亡）"})
-                continue
-
-            # 圈养者：守在栏畔，不肯走远
-            if a.驯化 and a.栏位 is not None:
+                    continue
                 py, px = a.栏位
                 if abs(a.y - py) + abs(a.x - px) > 4:
                     a.y += int(np.sign(py - a.y))
@@ -807,62 +802,9 @@ class World:
                     a.栏位 = None
                 self._兽食(a, p)
                 continue
-
-            # 野者避人：生的灵靠近则逃（火堆亦惊兽）
-            威胁 = None
-            for s in spirits:
-                if s.alive and abs(s.y - a.y) <= FLEE_RADIUS and abs(s.x - a.x) <= FLEE_RADIUS:
-                    威胁 = s
-                    break
-            if 威胁 is None:
-                for f in self.fires:
-                    if abs(f.y - a.y) <= FLEE_RADIUS and abs(f.x - a.x) <= FLEE_RADIUS:
-                        威胁 = f
-                        break
-            if 威胁 is not None:
-                # 兽受惊而逃——但贪食的兽有时尚且驻足，猎人因此追得上
-                if rng.random() < 0.6:
-                    a.y = int(np.clip(a.y + np.sign(a.y - 威胁.y), 0, self.size - 1))
-                    a.x = int(np.clip(a.x + np.sign(a.x - 威胁.x), 0, self.size - 1))
-                self._兽食(a, p)
-                continue
-
-            # 寻食：鸡逐虫，羊牛逐草
-            食场 = self.insects if p["食"] == "虫" else self.grass
-            阈 = 0.3 if p["食"] == "虫" else 0.25
-            best, bv = None, 食场[a.y, a.x]
-            for dy in (-1, 0, 1):
-                for dx in (-1, 0, 1):
-                    ny, nx = a.y + dy, a.x + dx
-                    if self.in_bounds(ny, nx) and 食场[ny, nx] > bv:
-                        best, bv = (ny, nx), 食场[ny, nx]
-            if best is not None:
-                a.y, a.x = best
-            elif rng.random() < 0.4:
-                a.y = int(np.clip(a.y + rng.integers(-1, 2), 0, self.size - 1))
-                a.x = int(np.clip(a.x + rng.integers(-1, 2), 0, self.size - 1))
-            self._兽食(a, p)
-
-        # 繁殖：温饱且成对
-        if len(self.animals) < ANIMAL_MAX:
-            for i in range(len(self.animals)):
-                for j in range(i + 1, len(self.animals)):
-                    x, y = self.animals[i], self.animals[j]
-                    if x.种类 != y.种类:
-                        continue
-                    if abs(x.y - y.y) + abs(x.x - y.x) > 2:
-                        continue
-                    p = BEASTS[x.种类]
-                    if x.阳 < p["阳"] * 0.6 or y.阳 < p["阳"] * 0.6:
-                        continue
-                    if rng.random() < BREED_CHANCE:
-                        # 繁衍亦凝聚：新生之阳与形阴自炁场抽取，不足则记越界
-                        阳初 = p["阳"] * 0.5
-                        形阴 = BEAST_FORM_YIN.get(x.种类, 10.0)
-                        实阳, 实阴 = self.qi.抽取(x.y, x.x, 阳=阳初, 阴=形阴)
-                        self.账.越界B += (阳初 - 实阳) + (形阴 - 实阴)
-                        self.animals.append(Animal(x.种类, x.y, x.x, 阳初))
-                        break
+            # 野性：兽层本能循环（饥则食、渴则饮、敌至则逃或斗）
+            _beast_mod.兽行(self, a, spirits, rng)
+        _beast_mod.繁衍(self, rng)
 
     def _兽食(self, a: Animal, p: dict):
         """兽食其食：鸡啄虫，羊牛啮草。鸡所过处，虫灾自减。
@@ -999,9 +941,10 @@ class World:
         return 物能
 
     def 水总量A(self, spirits: list) -> float:
-        """A 域（水文）总量：场水 + 云 + 九泉 + Σ活灵体水 + Σ罐中盛水。
+        """A 域（水文）总量：场水 + 云 + 九泉 + Σ活灵体水 + Σ兽体水 + Σ罐中盛水。
         身体里的水、罐里的水，都只是"转移了地方"的水——从未离开宇宙。"""
-        体水 = sum(s.水分 for s in spirits if s.alive)
+        体水 = sum(s.水分 for s in spirits if s.alive) \
+            + sum(a.水分 for a in self.animals)
         罐水 = 0.0
         for s in spirits:
             罐水 += sum(it.盛水 for it in s.bag)
