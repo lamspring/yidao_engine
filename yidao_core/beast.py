@@ -25,19 +25,19 @@ from .qi import BEAST_FORM_YIN
 #   迅猛龙：肉食小型群猎，猎体型不逾己者（成群可猎大一阶）
 BEASTS = {
     "鸡":   dict(食="虫", 体型="小", 群=False, 勇=0.10, 阳=40.0, 逸散=0.045,
-                 寿日=8, 蛋期=48),
+                 寿日=8, 蛋期=48, 繁率=0.012),
     "羊":   dict(食="草", 体型="中", 群=True, 勇=0.15, 阳=80.0, 逸散=0.05,
-                 寿日=16, 奶期=64),
+                 寿日=16, 奶期=64, 繁率=0.012),
     "牛":   dict(食="草", 体型="大", 群=True, 勇=0.30, 阳=120.0, 逸散=0.06,
-                 寿日=24, 奶期=64),
+                 寿日=24, 奶期=64, 繁率=0.012),
     "角龙": dict(食="草", 体型="大", 群=True, 勇=0.35, 阳=130.0, 逸散=0.045,
-                 寿日=45),
+                 寿日=45, 繁率=0.03),
     "梁龙": dict(食="草", 体型="巨", 群=False, 勇=0.50, 阳=200.0, 逸散=0.06,
-                 寿日=60),
+                 寿日=60, 繁率=0.015),
     "迅猛龙": dict(食="肉", 体型="小", 群=True, 勇=0.80, 阳=55.0, 逸散=0.06,
-                   寿日=30),
+                   寿日=30, 速=3, 繁率=0.025),
     "始祖鸟": dict(食="虫", 体型="小", 群=False, 勇=0.05, 阳=45.0, 逸散=0.04,
-                   寿日=25),
+                   寿日=25, 繁率=0.05),
 }
 
 BREED_CHANCE = 0.025    # 温饱成对的野兽每念繁殖概率（繁衍生息要跑赢天敌与寿数）
@@ -79,7 +79,7 @@ def 兽生(world, 种类: str, y: int, x: int, rng, 幼体: bool = False):
     实阳, 实阴 = world.qi.抽取(y, x, 阳=阳初, 阴=形阴)
     world.账.越界B += (阳初 - 实阳) + (形阴 - 实阴)
     a = Animal(种类, y, x, 阳初)
-    a.年龄 = 0 if 幼体 else int(p["寿日"] * _tpd() * 0.3)   # 创世兽自壮年起
+    a.年龄 = 0 if 幼体 else int(p["寿日"] * _tpd() * 0.2)   # 创世兽自壮年之初起
     if not 幼体:
         a.产物念 = int(rng.integers(0, 64))     # 创世畜禽的产物节律各异
     # 体水自场转入（水过身体，总量不变）
@@ -119,9 +119,30 @@ def _近(world, y, x, r):
                 yield ny, nx
 
 
+# ── 兽忆：槽位有限（水/食/险各四），数日即淡 ──
+MEM_KEEP = 4
+MEM_DAYS = 5.0
+
+
+def 兽记(忆: dict, y: int, x: int, tick: int):
+    """记一处：槽满则最旧者让位（兽之记忆，只记要义）。"""
+    if len(忆) >= MEM_KEEP and (y, x) not in 忆:
+        del 忆[min(忆, key=lambda k: 忆[k])]
+    忆[(y, x)] = tick
+
+
+def 忆取(忆: dict, tick: int) -> list:
+    """取未淡之忆，新者在前（读时即淡忘：过期者随风）。"""
+    for k in [k for k, v in 忆.items() if tick - v >= MEM_DAYS * _tpd()]:
+        del 忆[k]
+    return sorted(忆, key=lambda k: -忆[k])
+
+
 def _移(world, a, ty, tx, 疾走=False):
-    """向目标挪一步（疾走两步）。不上深水。"""
-    for _ in range(2 if 疾走 else 1):
+    """向目标挪一步（疾走则按其种之速率——猎者追上猎物的唯一凭据是更快）。
+    不上深水。"""
+    步 = BEASTS[a.种类].get("速", 2) if 疾走 else 1
+    for _ in range(步):
         dy = (ty > a.y) - (ty < a.y)
         dx = (tx > a.x) - (tx < a.x)
         ny, nx = a.y + dy, a.x + dx
@@ -158,7 +179,9 @@ def 兽行(world, a, spirits, rng):
         return
     a.年龄 += 1
     a.产物念 = max(0, a.产物念 - 1)
-    曲 = 体曲(a.年龄, 寿念)
+    # 伤势渐愈（数日乃愈）；负伤者体衰——体曲打折
+    a.伤 = max(0.0, a.伤 - 0.0003)
+    曲 = 体曲(a.年龄, 寿念) * (1.0 - 0.5 * a.伤)
 
     # 天敌至：逃（常态）或斗（勇而群、勇而大者敢斗）
     敌 = None
@@ -183,18 +206,22 @@ def 兽行(world, a, spirits, rng):
                     惊 = f
                     break
     if 惊 is not None and 敌 is None:
-        # 兽受惊而逃——但贪食的兽有时尚且驻足，猎人因此追得上
+        # 兽受惊而逃——但贪食的兽有时尚且驻足，猎人因此追得上；遭袭之处记为险地
+        兽记(a.忆险, a.y, a.x, world.tick)
         if rng.random() < 0.6:
             _移(world, a, a.y + (a.y - 惊.y), a.x + (a.x - 惊.x), 疾走=True)
     elif 敌 is not None and p["食"] != "肉":
+        兽记(a.忆险, a.y, a.x, world.tick)   # 此地遭袭，记为险地
         群 = sum(1 for b in world.animals if b.种类 == a.种类 and b is not a
                  and abs(b.y - a.y) <= 2 and abs(b.x - a.x) <= 2)
         if rng.random() < p["勇"] * (0.4 + 0.2 * 群) * 曲:
             我力 = p["阳"] * 曲
-            敌力 = BEASTS[敌.种类]["阳"] * 体曲(敌.年龄, BEASTS[敌.种类]["寿日"] * _tpd())
+            敌力 = BEASTS[敌.种类]["阳"] * 体曲(敌.年龄, BEASTS[敌.种类]["寿日"] * _tpd()) \
+                * (1.0 - 0.5 * 敌.伤)
             if 我力 >= 敌力 * rng.uniform(0.8, 1.3):
                 耗 = min(敌.阳, rng.uniform(8, 18))
                 敌.阳 -= 耗
+                敌.伤 = min(1.0, 敌.伤 + 0.3)      # 负伤
                 world.qi.归还(敌.y, 敌.x, 阳=耗)
                 if 敌.阳 <= 0:
                     兽亡(world, 敌)
@@ -205,28 +232,36 @@ def 兽行(world, a, spirits, rng):
             else:
                 耗 = min(a.阳, rng.uniform(8, 18))
                 a.阳 -= 耗
+                a.伤 = min(1.0, a.伤 + 0.3)        # 负伤
                 world.qi.归还(a.y, a.x, 阳=耗)
                 _移(world, a, a.y + (a.y - 敌.y), a.x + (a.x - 敌.x), 疾走=True)
         else:
             _移(world, a, a.y + (a.y - 敌.y), a.x + (a.x - 敌.x), 疾走=True)
         return
 
-    # 饥则食
-    if a.阳 < p["阳"] * 0.55:
+    # 饥则食（肉食者猎于未衰——阳尚七成就磨爪，待到力衰则无机可趁）
+    饥阈 = 0.7 if p["食"] == "肉" else 0.55
+    if a.阳 < p["阳"] * 饥阈:
         if p["食"] == "肉":
             if _猎(world, a, p, rng, 曲):
+                return
+            # 四顾无猎：向记忆中的猎场去（兽忆引路）
+            忆 = 忆取(a.忆食, world.tick)
+            if 忆:
+                _移(world, a, 忆[0][0], 忆[0][1], 疾走=True)
                 return
         else:
             _食素(world, a, p, rng, 曲)
             return
 
-    # 渴则饮：寻近处活水
+    # 渴则饮：寻近处活水；四野无水，则向记忆中的水点去（兽忆引路）
     if a.水分 < 40.0:
         if world.water[a.y, a.x] >= DRINK_MIN_BEAST:
             需 = (100.0 - a.水分) * BODY2FIELD
             取 = min(需, max(0.0, float(world.water[a.y, a.x]) - DRINK_KEEP))
             world.water[a.y, a.x] -= 取
             a.水分 += 取 / BODY2FIELD
+            兽记(a.忆水, a.y, a.x, world.tick)     # 曾饮处，记下
             return
         水点 = [(y, x) for y, x in _近(world, a.y, a.x, SENSE_BEAST)
                 if world.water[y, x] >= DRINK_MIN_BEAST]
@@ -234,18 +269,63 @@ def 兽行(world, a, spirits, rng):
             ty, tx = min(水点, key=lambda q: abs(q[0] - a.y) + abs(q[1] - a.x))
             _移(world, a, ty, tx)
             return
+        忆 = 忆取(a.忆水, world.tick)
+        if 忆:
+            ty, tx = 忆[0]
+            _移(world, a, ty, tx)
+            return
 
     # 夜伏：夜里不动，养阳
     if 夜:
         return
 
-    # 温饱则群聚、游荡；非群居者亦有求偶之驱（否则独居者永无后会）。
-    # 求偶之目及远（旷野寻侣，半径三倍于感知）；群聚之目及近。
+    # 肉食者的巢域：成年温饱则定巢；同种异巢者入我巢域，逐之；远行则回巡
+    if p["食"] == "肉":
+        if a.巢 is None and 曲 >= 1.0 and a.阳 > p["阳"] * 0.6:
+            a.巢 = (a.y, a.x)
+        if a.巢 is not None:
+            # 逐客有门槛有冷却：温饱有余、一日数念不过一——领地之争耗力，不为常事
+            客 = [] if (a.阳 < p["阳"] * 0.6 or rng.random() > 0.25
+                        or world.tick - a._逐念 < 32) else \
+                [b for b in world.animals if b.种类 == a.种类 and b is not a
+                 and b.巢 is not None and b.巢 != a.巢
+                 and abs(b.y - a.巢[0]) <= 6 and abs(b.x - a.巢[1]) <= 6
+                 and abs(b.y - a.y) <= SENSE_BEAST and abs(b.x - a.x) <= SENSE_BEAST]
+            if 客:
+                a._逐念 = world.tick
+                b = 客[0]
+                我力 = p["阳"] * 曲
+                客力 = p["阳"] * 体曲(b.年龄, p["寿日"] * _tpd()) * (1.0 - 0.5 * b.伤)
+                if 我力 >= 客力 * rng.uniform(0.8, 1.2):
+                    耗 = min(b.阳, rng.uniform(6, 14))
+                    b.阳 -= 耗
+                    b.伤 = min(1.0, b.伤 + 0.3)
+                    world.qi.归还(b.y, b.x, 阳=耗)
+                    _移(world, b, b.y + (b.y - a.y), b.x + (b.x - a.x), 疾走=True)
+                    if b.阳 <= 0:
+                        兽亡(world, b)
+                    world._events.append({"kind": "逐客", "pos": (a.y, a.x),
+                                          "actor": a.种类, "target": b.种类,
+                                          "text": f"一头{a.种类}逐离闯入巢域的同种"
+                                                  "（因：领地之守）"})
+                else:
+                    耗 = min(a.阳, rng.uniform(6, 14))
+                    a.阳 -= 耗
+                    a.伤 = min(1.0, a.伤 + 0.3)
+                    world.qi.归还(a.y, a.x, 阳=耗)
+                return
+            # 归巢：远离巢域则回巡
+            if abs(a.y - a.巢[0]) + abs(a.x - a.巢[1]) > 10:
+                _移(world, a, a.巢[0], a.巢[1])
+                return
+
+    # 温饱则群聚、游荡（避开记忆中的险地）；非群居者亦有求偶之驱。
+    险 = set(忆取(a.忆险, world.tick))
     同近 = [b for b in world.animals if b.种类 == a.种类 and b is not a
             and abs(b.y - a.y) <= SENSE_BEAST and abs(b.x - a.x) <= SENSE_BEAST]
     if p["群"] and 同近:
         近 = min(同近, key=lambda b: abs(b.y - a.y) + abs(b.x - a.x))
-        if abs(近.y - a.y) + abs(近.x - a.x) > 2:
+        if abs(近.y - a.y) + abs(近.x - a.x) > 2 and (近.y, 近.x) not in 险:
             _移(world, a, 近.y, 近.x)
             return
     elif rng.random() < 0.25:
@@ -253,15 +333,19 @@ def 兽行(world, a, spirits, rng):
                 and abs(b.y - a.y) <= SENSE_BEAST * 3 and abs(b.x - a.x) <= SENSE_BEAST * 3]
         if 同远:
             远 = min(同远, key=lambda b: abs(b.y - a.y) + abs(b.x - a.x))
-            if abs(远.y - a.y) + abs(远.x - a.x) > 2:
+            if abs(远.y - a.y) + abs(远.x - a.x) > 2 and (远.y, 远.x) not in 险:
                 _移(world, a, 远.y, 远.x)
                 return
     if rng.random() < 0.35:
-        _移(world, a, a.y + int(rng.integers(-1, 2)), a.x + int(rng.integers(-1, 2)))
+        ny = a.y + int(rng.integers(-1, 2))
+        nx = a.x + int(rng.integers(-1, 2))
+        if (ny, nx) not in 险:
+            _移(world, a, ny, nx)
 
 
 def _食素(world, a, p, rng, 曲):
-    """植食/杂食：就草虫而食（食入记日月之泵）；此处无食，向更丰处挪。"""
+    """植食/杂食：就草虫而食（食入记日月之泵）；此处无食，向更丰处挪；
+    四顾皆贫，则向记忆中的丰草处去（兽忆引路）。"""
     旧 = a.阳
     if p["食"] == "虫":
         if world.insects[a.y, a.x] > 0.3:
@@ -273,6 +357,7 @@ def _食素(world, a, p, rng, 曲):
             a.阳 = min(p["阳"], a.阳 + 5.0 * 曲)
     world.账.泵 += a.阳 - 旧
     if a.阳 > 旧:
+        兽记(a.忆食, a.y, a.x, world.tick)     # 曾饱食处，记下
         return
     场 = world.insects if p["食"] == "虫" else world.grass
     佳, 佳值 = None, 场[a.y, a.x]
@@ -281,23 +366,36 @@ def _食素(world, a, p, rng, 曲):
             佳, 佳值 = (y, x), 场[y, x]
     if 佳 is not None:
         a.y, a.x = 佳
-    else:
-        点 = [(y, x) for y, x in _近(world, a.y, a.x, SENSE_BEAST)
-              if 场[y, x] > 场[a.y, a.x]]
-        if 点:
-            ty, tx = min(点, key=lambda q: abs(q[0] - a.y) + abs(q[1] - a.x))
-            _移(world, a, ty, tx)
+        return
+    点 = [(y, x) for y, x in _近(world, a.y, a.x, SENSE_BEAST)
+          if 场[y, x] > 场[a.y, a.x]]
+    if 点:
+        ty, tx = min(点, key=lambda q: abs(q[0] - a.y) + abs(q[1] - a.x))
+        _移(world, a, ty, tx)
+        return
+    忆 = 忆取(a.忆食, world.tick)
+    if 忆:
+        ty, tx = 忆[0]
+        _移(world, a, ty, tx)
 
 
 def _猎(world, a, p, rng, 曲) -> bool:
-    """肉食：先噬尸（腐肉亦食），再猎活物——猎体型不逾己者，成群可猎大一阶。"""
+    """肉食：先噬尸（腐肉亦食，远嗅可及），再猎活物——猎体型不逾己者，成群可猎大一阶。"""
     for c in list(world.carrions):
         if abs(c.y - a.y) <= 1 and abs(c.x - a.x) <= 1 and c.肉 > 0:
             c.肉 -= 1
             旧 = a.阳
-            a.阳 = min(p["阳"], a.阳 + 12.0)
+            a.阳 = min(p["阳"], a.阳 + 22.0)   # 一餐管数日
             world.账.泵 += a.阳 - 旧
+            兽记(a.忆食, a.y, a.x, world.tick)     # 腐肉亦食，此处有尸，记下
             return True
+    # 远嗅尸气：六格之内有尸，寻味而去
+    尸点 = [(c.y, c.x) for c in world.carrions if c.肉 > 0
+            and abs(c.y - a.y) <= 6 and abs(c.x - a.x) <= 6]
+    if 尸点:
+        ty, tx = min(尸点, key=lambda q: abs(q[0] - a.y) + abs(q[1] - a.x))
+        _移(world, a, ty, tx, 疾走=True)
+        return True
     群 = sum(1 for b in world.animals if b.种类 == a.种类 and b is not a
              and abs(b.y - a.y) <= 3 and abs(b.x - a.x) <= 3)
 
@@ -315,9 +413,10 @@ def _猎(world, a, p, rng, 曲) -> bool:
     猎 = min(可猎, key=lambda b: abs(b.y - a.y) + abs(b.x - a.x))
     if abs(猎.y - a.y) + abs(猎.x - a.x) <= 1:
         猎曲 = 体曲(猎.年龄, BEASTS[猎.种类]["寿日"] * _tpd())
-        得手 = 0.35 + 0.3 * (曲 - 猎曲) + 0.1 * min(群, 3)   # 捕猎多失手：猎非易也
+        得手 = 0.45 + 0.3 * (曲 - 猎曲) + 0.1 * min(群, 3)   # 捕猎多失手：猎非易也
         if rng.random() < 得手:
             兽亡(world, 猎)
+            兽记(a.忆食, a.y, a.x, world.tick)     # 猎场记下，他日还来
             world._events.append({"kind": "猎杀", "pos": (a.y, a.x),
                                   "actor": a.种类, "target": 猎.种类,
                                   "text": f"一头{a.种类}猎杀了{猎.种类}"
@@ -349,6 +448,22 @@ def 繁衍(world, rng):
             if 体曲(x.年龄, p["寿日"] * _tpd()) < 1.0 \
                     or 体曲(y.年龄, p["寿日"] * _tpd()) < 1.0:
                 continue
-            if rng.random() < BREED_CHANCE:
+            # 肉食者唯温饱乃育（阳逾七成）——掠食者的繁荣须有节制
+            if p["食"] == "肉" and (x.阳 < p["阳"] * 0.7 or y.阳 < p["阳"] * 0.7):
+                continue
+            # 密度负反馈：本地食料贫瘠处不繁（植食看草虫，肉食看猎场与尸）
+            if p["食"] == "肉":
+                猎场 = [b for b in world.animals if BEASTS[b.种类]["食"] != "肉"
+                        and abs(b.y - x.y) <= SENSE_BEAST * 2
+                        and abs(b.x - x.x) <= SENSE_BEAST * 2]
+                if not 猎场 and not any(abs(c.y - x.y) <= 8 and abs(c.x - x.x) <= 8
+                                        for c in world.carrions):
+                    continue
+            else:
+                场 = world.insects if p["食"] == "虫" else world.grass
+                本地 = [场[y2, x2] for y2, x2 in _近(world, x.y, x.x, 3)]
+                if sum(本地) / len(本地) < 0.18:
+                    continue
+            if rng.random() < p.get("繁率", BREED_CHANCE):
                 兽生(world, x.种类, x.y, x.x, rng, 幼体=True)
                 return

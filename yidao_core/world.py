@@ -287,7 +287,9 @@ class Carrion:
 @dataclass
 class Animal:
     """走兽：轻量个体。吃草/饮水/受惊逃/繁殖/衰老死亡——与灵同一个阴阳模型。
-    亦有体水（水过兽身，总量不变）；野性本能循环见兽层（beast.py）。"""
+    亦有体水（水过兽身，总量不变）；野性本能循环见兽层（beast.py）。
+    兽有浅记忆（水源/丰草/险地，数日即淡）；有伤势（负伤数日乃愈）；
+    肉食者有其巢域（巡守、驱离同种）。"""
     种类: str
     y: int
     x: int
@@ -297,6 +299,12 @@ class Animal:
     栏位: tuple | None = None     # 圈养锚点
     产物念: int = 0               # 距下次下蛋/可挤奶的剩余念数
     水分: float = 80.0            # 体水：渴则饮，汗溺还场
+    忆水: dict = field(default_factory=dict)   # (y,x) → 念：曾饮处
+    忆食: dict = field(default_factory=dict)   # (y,x) → 念：曾饱食处
+    忆险: dict = field(default_factory=dict)   # (y,x) → 念：遭袭处
+    伤: float = 0.0               # 伤势 0..1：负伤体衰，数日乃愈
+    巢: tuple | None = None       # 巢域锚点（肉食者巡守之）
+    _逐念: int = -64              # 上次逐客之念（领地之争，一日数念不过一）
 
     @property
     def 驯化(self) -> bool:
@@ -421,7 +429,7 @@ class World:
                 self.trees.append(Tree(y, x, float(self._rng.uniform(20, 90)),
                                        果树=bool(self._rng.random() < 0.3)))
         群 = {"田园": {"鸡": 6, "羊": 4, "牛": 3},
-              "侏罗纪": {"角龙": 6, "梁龙": 2, "迅猛龙": 4, "始祖鸟": 5}}[兽群]
+              "侏罗纪": {"角龙": 6, "梁龙": 2, "迅猛龙": 6, "始祖鸟": 5}}[兽群]
         for 种类, 数 in 群.items():
             for _ in range(数):
                 y, x = int(self._rng.integers(0, size)), int(self._rng.integers(0, size))
