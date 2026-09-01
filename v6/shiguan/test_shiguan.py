@@ -246,7 +246,58 @@ TESTS = [
     ("test_s2_调查接口", "慢"),
     ("test_s2_节拍折叠重校", "慢"),
     ("test_s2e_梗概对手方", "慢"),
+    ("test_s3_成篇与校验", "慢"),
 ]
+
+
+def test_s3_成篇与校验():
+    """§四/§五：单链成篇一次调用、格式过硬、校验器抓虚构、重试纪律有界。"""
+    from v6.shiguan.writer import Writer
+    from v6.shiguan.validator import Validator
+    from v6.shiguan.inquest import Inquest
+    s, led = 一缸(42, 60)
+    sel = ChainSelector(led, s.spirits)
+    chain = sel.detect_all()[0]
+    iq = Inquest(led, s.spirits)
+
+    def 好文(_sys, _user):
+        """mock 后端：产一篇合规格式的成篇（锚点皆真，考据逐字）。"""
+        nodes = chain.nodes[:3]
+        段 = []
+        表 = ["## 考据表", "",
+              "| 段落 | 锚定事件 | tick | 事件原文 |",
+              "|------|----------|------|----------|"]
+        for i, nid in enumerate(nodes):
+            e = led.by_id(nid)
+            段.append(f"第{e['day']}日，{e['actor'] or '有人'}行{e['kind']}之事。 [E{nid}]")
+            表.append(f"| §{i + 1} | E{nid} | {e['tick']} | \"{e['text']}\" |")
+        return "# 测试篇\n\n" + "\n\n".join(段) + "\n\n---\n\n" + "\n".join(表) + "\n", {}
+
+    w = Writer(led, iq, llm_caller=好文)
+    r = w.write(chain)
+    ok("成篇·一次通过一次调用", r["ok"] and r["attempts"] == 1)
+    ok("成篇·格式合规", r["text"].startswith("# ") and "## 考据表" in r["text"])
+    ok("成篇·校验零违规", Validator(led, chain, iq).validate(r["text"]) == [])
+
+    # 坏文：无锚点 + 人名越界 + 禁词 —— 校验器须全抓；重试至多 2 次后判失败
+    calls = []
+
+    def 坏文(_sys, _user):
+        calls.append(1)
+        return ("# 坏篇\n\n他恰好遇见了不存在的人。无处可考。\n\n---\n\n## 考据表\n", {})
+
+    w2 = Writer(led, iq, llm_caller=坏文)
+    r2 = w2.write(chain)
+    ok("校验·坏文三试而败", not r2["ok"] and r2["attempts"] == 3)
+    ok("校验·违规清单非空", bool(r2["违规"]), f"{len(r2['违规'])} 条")
+    ok("校验·违规含锚点缺失与禁词",
+       any("锚点" in v for v in r2["违规"]) and any("禁词" in v for v in r2["违规"]))
+    ok("成篇·LLM 调用有界（1+2 重试）", len(calls) == 3)
+
+    # §七-4：同种子同事件簿 → 选中的链与节点与考据表骨架相同
+    sel2 = ChainSelector(led, s.spirits)
+    chain2 = sel2.detect_all()[0]
+    ok("确定性·同簿同链", chain.nodes == chain2.nodes and chain.summary == chain2.summary)
 
 
 if __name__ == "__main__":
