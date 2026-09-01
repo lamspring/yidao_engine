@@ -118,6 +118,11 @@ python main.py --provider local
 | `mimo` | `MIMO_API_KEY` | 小米内部 API（外部用户不可用） |
 | `local` | 无需 key | 本地 Ollama / vLLM |
 
+额外环境变量：
+| 变量 | 说明 |
+|------|------|
+| `YIDAO_API_BASE` | 自定义 API 端点（stage 测试脚本使用），未设置时默认 `https://token-plan-cn.xiaomimimo.com/v1` |
+
 设置示例：
 ```bash
 # Linux/macOS

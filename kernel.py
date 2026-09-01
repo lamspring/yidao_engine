@@ -99,7 +99,7 @@ def zong_gua(S):
     return np.bitwise_or(np.left_shift(lower, 3), upper)
 
 def hugua_scalar(S: int) -> int:
-    """互卦：取2345爻（内部矛盾显性化）"""
+    """互卦：取2345爻（标量版本，内部矛盾显性化）"""
     y0 = (S >> 1) & 1
     y1 = (S >> 2) & 1
     y2 = (S >> 3) & 1
@@ -108,9 +108,25 @@ def hugua_scalar(S: int) -> int:
     y5 = (S >> 4) & 1
     return y0 | (y1 << 1) | (y2 << 2) | (y3 << 3) | (y4 << 4) | (y5 << 5)
 
+def hugua(S: np.ndarray) -> np.ndarray:
+    """互卦：取2345爻（向量化版本）
+    初爻=原2爻, 二爻=原3爻, 三爻=原4爻, 四爻=原3爻, 五爻=原4爻, 上爻=原5爻"""
+    result = np.zeros_like(S, dtype=np.uint8)
+    result |= (S >> 1) & 1          # bit0 ← S.bit1 (2爻)
+    result |= ((S >> 2) & 1) << 1   # bit1 ← S.bit2 (3爻)
+    result |= ((S >> 3) & 1) << 2   # bit2 ← S.bit3 (4爻)
+    result |= ((S >> 2) & 1) << 3   # bit3 ← S.bit2 (3爻重复)
+    result |= ((S >> 3) & 1) << 4   # bit4 ← S.bit3 (4爻重复)
+    result |= ((S >> 4) & 1) << 5   # bit5 ← S.bit4 (5爻)
+    return result
+
 def yao_bian_scalar(S: int, pos: int) -> int:
-    """单爻变：变动指定爻位（0=初爻, ..., 5=上爻）"""
+    """单爻变：变动指定爻位（标量版本，0=初爻, ..., 5=上爻）"""
     return S ^ (1 << pos)
+
+def yao_bian(S: np.ndarray, positions: np.ndarray) -> np.ndarray:
+    """单爻变：向量化，positions 为 uint8 数组 (0-5)"""
+    return S ^ (np.uint8(1) << positions)
 
 def split_trigrams(S: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """向量化分离六爻卦的上下卦"""
@@ -293,30 +309,45 @@ class World:
 
     def _accumulate_potential(self, new_trend: np.ndarray) -> np.ndarray:
         """
-        反向势能积累（含观察保护期与老年加速）。
+        反向势能积累（含观察保护期与64息卦运周期）。
 
         四阶段韵律：
           婴儿期（stable_age < 10）：保护极强，几乎不积累
           成长期（10~40）：S 曲线平滑过渡
-          成熟期（40~80）：正常积累
-          老年期（> 80）：额外加速，确保老而不死必有一爆
+          成熟期（40~）：正常积累 + 卦运周期调制
+
+        卦运周期（64息一循环）：
+          每64息为一个卦运周期。周期内势能先升后降（正弦波调制）。
+          0→32息：势能加速积累（旺相期）
+          32→48息：势能达到峰值（临界期）
+          48→64息：若未爆发则回落（休养期），但残余势能叠加至下一周期
+          卦变发生时势能归零，stable_age 重置，新周期重新开始。
+          活跃结构（气象强）基础积累慢，可跨越多个周期；
+          死寂结构（气象弱）基础积累快，往往首周期即爆发。
+          —— 反者道之动：表面最稳者，内在最危。
         """
+        age = self.stable_age.astype(np.float32)
+
         # 1. 基础积累：气象越平静，积累越快
         base = 0.030 * np.exp(-2.8 * np.abs(new_trend))
 
         # 2. 观察保护期：S 曲线调制（sigmoid，中心 25 息）
-        age = self.stable_age.astype(np.float32)
         protection = 1.0 / (1.0 + np.exp(-0.15 * (age - 25)))
 
-        # 3. 老年加速：stable_age > 80 时额外加速
-        senescence = 0.025 * (age > 80).astype(np.float32)
+        # 3. 卦运周期调制（64息正弦波，替代旧版 flat senescence）
+        #    周期内势能先升后降：cos(2π·age/64) 在 age=0 时为1（低点），age=32 时为-1（高点）
+        #    映射为 0→1→0 的波浪因子：0.5*(1 - cos(...))
+        cycle_phase = 2 * np.pi * (age % 64) / 64.0
+        cycle_factor = 0.5 * (1.0 - np.cos(cycle_phase))
+        # 周期调制强度：峰值 ~0.03/息，谷值 ~0
+        cycle_boost = 0.03 * cycle_factor
 
-        pot = self.potential + base * protection + senescence
+        pot = self.potential + base * protection + cycle_boost
         return np.clip(pot, 0.0, 2.5)
 
     def _resolve_transformations(self, new_trend: np.ndarray, new_phase: np.ndarray, new_potential: np.ndarray):
         """
-        穷极则变 + 上爻反转。
+        穷极则变 + 上爻反转（向量化版本）。
         """
         gua_out = self.gua.copy()
         trend_out = new_trend.copy()
@@ -334,29 +365,38 @@ class World:
             stable_out[rebirth] = 0
 
         # 条件2: 势能释放（potential > V_thresh，结构内在矛盾爆发）
+        # 向量化版本：按 phase 分三组，每组批量应用变换
         flip = (~rebirth) & (new_potential > self.V_thresh)
         if np.any(flip):
-            idx_y, idx_x = np.where(flip)
-            for y, x in zip(idx_y, idx_x):
-                S = int(gua_out[y, x])
-                ph = float(phase_out[y, x])
+            flip_y, flip_x = np.where(flip)
+            ph_flip = phase_out[flip_y, flip_x]
 
-                if ph < 0.30:
-                    # 初爻/二爻：内部矛盾显性化 → 互卦
-                    gua_out[y, x] = hugua_scalar(S)
-                elif ph < 0.60:
-                    # 三爻/四爻：结构翻转 → 综卦
-                    gua_out[y, x] = zong_gua(np.array([S], dtype=np.uint8))[0]
-                else:
-                    # 五爻/上爻前夕：当前主导爻位发生变动
-                    pos = min(5, int(ph * 6))
-                    gua_out[y, x] = yao_bian_scalar(S, pos)
+            # 按生命周期三分组
+            early_mask = ph_flip < 0.30
+            mid_mask = (ph_flip >= 0.30) & (ph_flip < 0.60)
+            late_mask = ph_flip >= 0.60
 
-                pot_out[y, x] = 0.0
-                # 释放势能会强化当前气象方向（突变加速）
-                t = float(trend_out[y, x])
-                trend_out[y, x] = np.clip(t + np.sign(t) * 0.30, -1.0, 1.0)
-                stable_out[y, x] = 0
+            # 初爻/二爻：内部矛盾显性化 → 互卦（向量化）
+            if np.any(early_mask):
+                ey, ex = flip_y[early_mask], flip_x[early_mask]
+                gua_out[ey, ex] = hugua(gua_out[ey, ex])
+
+            # 三爻/四爻：结构翻转 → 综卦（向量化）
+            if np.any(mid_mask):
+                my, mx = flip_y[mid_mask], flip_x[mid_mask]
+                gua_out[my, mx] = zong_gua(gua_out[my, mx])
+
+            # 五爻/上爻前夕：当前主导爻位发生变动（向量化）
+            if np.any(late_mask):
+                ly, lx = flip_y[late_mask], flip_x[late_mask]
+                pos = np.minimum(5, (ph_flip[late_mask] * 6).astype(np.uint8))
+                gua_out[ly, lx] = yao_bian(gua_out[ly, lx], pos)
+
+            # 公共后处理（向量化）
+            pot_out[flip] = 0.0
+            t_flip = trend_out[flip]
+            trend_out[flip] = np.clip(t_flip + np.sign(t_flip) * 0.30, -1.0, 1.0)
+            stable_out[flip] = 0
 
         return gua_out, trend_out, phase_out, pot_out, stable_out
 

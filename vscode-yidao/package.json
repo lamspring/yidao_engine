@@ -1,0 +1,85 @@
+{
+  "name": "vscode-yidao",
+  "displayName": "易道引擎",
+  "description": "在 VS Code 中交互式推演易道世界",
+  "version": "0.1.0",
+  "publisher": "yidao-engine",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:yidao.openPanel"
+  ],
+  "main": "./out/extension.js",
+  "files": [
+    "out/**/*.js",
+    "media/**/*",
+    "api_server.py",
+    "README.md"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "yidao.openPanel",
+        "title": "打开易道推演面板",
+        "category": "易道引擎",
+        "icon": "$(play)"
+      },
+      {
+        "command": "yidao.startServer",
+        "title": "启动推演服务器",
+        "category": "易道引擎"
+      },
+      {
+        "command": "yidao.stopServer",
+        "title": "停止推演服务器",
+        "category": "易道引擎"
+      }
+    ],
+
+    "configuration": {
+      "title": "易道引擎",
+      "properties": {
+        "yidao.pythonPath": {
+          "type": "string",
+          "default": "python",
+          "description": "Python 可执行文件路径"
+        },
+        "yidao.apiPort": {
+          "type": "number",
+          "default": 8765,
+          "description": "API 服务器端口"
+        },
+        "yidao.mode": {
+          "type": "string",
+          "default": "family",
+          "enum": ["single", "dual", "family"],
+          "description": "推演模式"
+        },
+        "yidao.provider": {
+          "type": "string",
+          "default": "deepseek",
+          "description": "LLM 提供商"
+        },
+        "yidao.worldview": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "世界观配置名（如 xiuxian）"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0"
+  }
+}

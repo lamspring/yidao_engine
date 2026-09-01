@@ -1150,7 +1150,7 @@ cam.set_scale("cosmic")  # 拉升视角，将之前的局部叙事嵌入全局
 ```
 Layer 1: kernel.py (YVM 内核)
   五场状态: gua, trend, phase, potential, stable_age
-  演算规则: 五行交感 + 八卦协议 + 六爻周期 + 穷极则变 + 道控制器
+  演算规则: 五行交感 + 八卦协议 + 六爻周期 + 64息卦运周期势能 + 穷极则变 + 道控制器
   |
   v
 Layer 2: observer.py (WorldCamera)

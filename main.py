@@ -35,6 +35,7 @@ from pipeline import prompts
 from pipeline.llm_client import LLMClient
 from pipeline import validator
 from pipeline import state_manager
+from pipeline.interactive_runner import InteractiveRunner
 
 
 def parse_args():
@@ -56,6 +57,8 @@ def parse_args():
     p.add_argument("--list-states", action="store_true", help="列出所有已保存的状态")
     # 输出
     p.add_argument("--output", default="./outputs", help="叙事输出目录")
+    # 交互模式
+    p.add_argument("--interactive", action="store_true", help="进入交互式推演模式（逐步推进、实时解释）")
     return p.parse_args()
 
 
@@ -301,8 +304,184 @@ def _ensure_dir(path: str):
     os.makedirs(path, exist_ok=True)
 
 
+def _print_interactive_banner():
+    print("\n" + "=" * 60)
+    print("【易道引擎 v5.1 交互推演模式】")
+    print("=" * 60)
+    print("命令: [Enter]/n 下一步 | s N 推进N | e 解释 | focus 聚焦")
+    print("      variant 变体 | variants 列变体 | r 重生成 | reset 重置")
+    print("      save 保存 | load 加载 | status 状态 | q 退出")
+    print("=" * 60 + "\n")
+
+
+def run_interactive(cfg: PipelineConfig, args):
+    """交互式推演模式主循环。"""
+    runner = InteractiveRunner(cfg, output_dir=args.output)
+    _print_interactive_banner()
+
+    # 如果指定了 --load，加载会话
+    if args.load:
+        print(f"[加载] 从会话 '{args.load}' 恢复...")
+        if runner.load_session(args.load, args.state_dir):
+            print("  会话加载成功")
+        else:
+            print("  会话加载失败，使用全新世界")
+
+    while True:
+        try:
+            cmd = input(f"[{runner.runner.world.tick_count}]> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n[退出] 再见")
+            break
+
+        if not cmd:
+            # 默认：使用 snapshot_interval 作为步长
+            step_ticks = cfg.world.snapshot_interval
+            result = runner.step(step_ticks)
+            if result.get("error"):
+                print(f"[提示] {result['message']}")
+                continue
+            print(f"  推进 {result['ticks_advanced']} ticks | tick={result['end_tick']}", end="")
+            if result["flip_detected"]:
+                print(f" | ⚡ 检测到 {len(result['new_flips'])} 次卦变")
+            else:
+                print(" | 稳态")
+            print(f"  输入 'e' 解释此幕，或继续推进")
+            continue
+
+        parts = cmd.split(maxsplit=2)
+        cmd_name = parts[0].lower()
+
+        if cmd_name in ("n", "next"):
+            step_ticks = cfg.world.snapshot_interval
+            result = runner.step(step_ticks)
+            if result.get("error"):
+                print(f"[提示] {result['message']}")
+                continue
+            print(f"  推进 {result['ticks_advanced']} ticks | tick={result['end_tick']}", end="")
+            if result["flip_detected"]:
+                print(f" | ⚡ 检测到 {len(result['new_flips'])} 次卦变")
+            else:
+                print(" | 稳态")
+
+        elif cmd_name == "s" and len(parts) >= 2:
+            try:
+                step_ticks = int(parts[1])
+            except ValueError:
+                print("[错误] 用法: s <N>（推进 N ticks）")
+                continue
+            result = runner.step(step_ticks)
+            if result.get("error"):
+                print(f"[提示] {result['message']}")
+                continue
+            print(f"  推进 {result['ticks_advanced']} ticks | tick={result['end_tick']}", end="")
+            if result["flip_detected"]:
+                print(f" | ⚡ 检测到 {len(result['new_flips'])} 次卦变")
+            else:
+                print(" | 稳态")
+
+        elif cmd_name in ("e", "explain"):
+            print("\n[生成叙事中...]")
+            text = runner.explain()
+            print("\n" + "=" * 60)
+            print(text)
+            print("=" * 60)
+
+        elif cmd_name == "focus" and len(parts) >= 2:
+            target = parts[1]
+            runner.camera.focus = target
+            print(f"  摄像机聚焦已设置为: {target}")
+
+        elif cmd_name == "variant" and len(parts) >= 2:
+            tag = parts[1]
+            # 清理 Windows 终端可能引入的 surrogates
+            tag = tag.encode("utf-8", "replace").decode("utf-8")
+            if tag.lower() in ("off", "none", "null"):
+                runner.camera.variant_lock = None
+                print("  变体锁定已解除")
+            else:
+                runner.camera.variant_lock = tag
+                print(f"  变体已锁定为: {tag}")
+
+        elif cmd_name == "variants":
+            if len(parts) >= 2:
+                protocol = parts[1]
+                print(runner.variant_store.format_table(protocol))
+            else:
+                for protocol in runner.variant_store.list_protocols():
+                    print(runner.variant_store.format_table(protocol))
+                    print()
+
+        elif cmd_name == "add-variant" and len(parts) >= 2:
+            # 格式: add-variant protocol tag content...
+            sub = cmd.split(maxsplit=3)
+            if len(sub) < 4:
+                print("[错误] 用法: add-variant <protocol> <tag> <content>")
+                continue
+            _, protocol, tag, content = sub
+            ok = runner.variant_store.add_variant(protocol, tag, content)
+            if ok:
+                print(f"  变体 '{tag}' 已添加到协议 '{protocol}'")
+            else:
+                print(f"  失败: 协议 '{protocol}' 下已存在名为 '{tag}' 的变体")
+
+        elif cmd_name in ("rm-variant", "remove-variant") and len(parts) >= 3:
+            protocol = parts[1]
+            tag = parts[2]
+            ok = runner.variant_store.remove_variant(protocol, tag)
+            if ok:
+                print(f"  变体 '{tag}' 已从协议 '{protocol}' 删除")
+            else:
+                print(f"  失败: 变体 '{tag}' 不存在或不可删除（只能删除会话级变体）")
+
+        elif cmd_name in ("r", "reroll", "retry"):
+            print("\n[重新生成叙事中...]")
+            text = runner.reroll()
+            print("\n" + "=" * 60)
+            print(text)
+            print("=" * 60)
+
+        elif cmd_name == "reset":
+            runner.reset()
+            print("  世界已重置。tick=0，叙事历史已清空。")
+
+        elif cmd_name == "save" and len(parts) >= 2:
+            name = parts[1]
+            path = runner.save_session(name, args.state_dir)
+            print(f"  会话已保存到: {path}")
+
+        elif cmd_name == "load" and len(parts) >= 2:
+            name = parts[1]
+            if runner.load_session(name, args.state_dir):
+                print(f"  会话 '{name}' 加载成功")
+            else:
+                print(f"  会话 '{name}' 加载失败")
+
+        elif cmd_name in ("st", "status"):
+            print(runner.status())
+
+        elif cmd_name == "camera":
+            print(f"  当前摄像机: {runner.camera.status_line()}")
+            print("  可用 focus: family / " + " / ".join(e.name for e in cfg.entities))
+
+        elif cmd_name in ("q", "quit", "exit"):
+            print("[退出] 再见")
+            break
+
+        elif cmd_name in ("h", "help"):
+            _print_interactive_banner()
+        else:
+            print(f"[未知命令] {cmd_name}，输入 help 查看可用命令")
+
+
 def main():
     args = parse_args()
+
+    # 交互模式
+    if args.interactive:
+        cfg = setup_config(args)
+        run_interactive(cfg, args)
+        return
 
     # 列出状态
     if args.list_states:

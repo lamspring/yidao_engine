@@ -12,6 +12,12 @@ __pycache__/
 outputs/
 states/
 
+# 子项目依赖
+vscode-yidao/node_modules/
+
+# 归档文件
+archive/
+
 # IDE
 .vscode/
 .idea/
