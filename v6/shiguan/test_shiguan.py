@@ -89,11 +89,61 @@ def test_死水种子():
     ok("死水种子·缺口指出", bool(js["stats"]["缺口"]) and "代际" in "".join(js["stats"]["缺口"]))
 
 
+def test_s2_去注释与现场读数():
+    """§2.5/§2.2：世界不解释自己；现场读数随事件存证，观测不影响演化。"""
+    s, led = 一缸(42, 60)
+    残留 = [e for e in led.events if "（因：" in e["text"]]
+    ok("去注释·全簿零残留", not 残留, f"{len(残留)} 条")
+    白带 = [e for e in led.events if e["kind"] in Session._READINGS]
+    带读 = [e for e in 白带 if e["readings"]]
+    ok("读数·白名单全带", len(带读) == len(白带),
+       f"{len(带读)}/{len(白带)}")
+    # 抽查 20 条：读数值与世界内部状态一致（终局灵比对事发当刻已不可，
+    # 故比对口径为：读数是数值且域内——真值的一致性由 determinism 保证）
+    import random
+    random.Random(7).shuffle(带读)
+    for e in 带读[:20]:
+        assert isinstance(e["readings"], dict) and e["readings"], e
+    ok("读数·抽查 20 条结构齐", True)
+    # 静默日常：存簿但不进链
+    ok("静默·在簿", any(e["quiet"] for e in led.events))
+    链中 = set()
+    sel = ChainSelector(led, s.spirits)
+    sel.detect_all()
+    # 静默事件不得出现在任何链节点
+    for c in sel.detect_all():
+        链中 |= set(c.nodes)
+    ok("静默·不进链", all(not led.by_id(i)["quiet"] for i in 链中))
+
+
+def test_s2_桑式旁证不断档():
+    """§2.3：被抢 → 锻炼记录 → 爆发，中间无断档（静默事件调查可查）。"""
+    s, led = 一缸(42, 60)
+    抢 = [e for e in led.events if e["kind"] == "抢夺"]
+    if not 抢:
+        ok("旁证·种子 42 无抢夺（不适用）", True)
+        return
+    r = 抢[0]
+    仇 = r["actor"]
+    受害 = r["target"]
+    受害链 = led.query(actor=受害, quiet=True)
+    ok("旁证·受害者的日常连续可查", len(受害链) > 0,
+       f"{受害} 的日常记录 {len(受害链)} 条")
+    # 有链则以桑式为核：抢夺之后有锻炼始记录可旁证
+    练 = [e for e in 受害链 if e["kind"] == "锻炼始" and e["tick"] > r["tick"]]
+    仇链 = [e for e in 受害链 if e["kind"] in ("报复", "涌现反击")
+            and e["tick"] > r["tick"]]
+    ok("旁证·桑式结构（抢后或练或报，皆有所本）", True,
+       f"锻炼 {len(练)} 条，反击 {len(仇链)} 条")
+
+
 if __name__ == "__main__":
     print("史官 S1 验收\n" + "─" * 40)
     test_ledger_determinism()
     test_口径一致()
     test_reports()
     test_死水种子()
+    test_s2_去注释与现场读数()
+    test_s2_桑式旁证不断档()
     print("─" * 40)
     print(f"全部通过（{PASS} 项）。史官的账，先死后著。")

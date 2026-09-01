@@ -72,7 +72,8 @@ def run(ticks: int, seed: int, quiet: bool, verbose: bool):
     journal: list[dict] = []        # 观测笔记：在观测层，不在世界层
     session = None                  # 先占位，report 闭包晚绑定
 
-    def report(tick, pos, text, kind, actor=None, target=None, subject=None):
+    def report(tick, pos, text, kind, actor=None, target=None, subject=None,
+               **_extra):     # 考据线索（因注/读数等）随 extra 而来，鱼缸不录
         journal.append({"tick": tick, "kind": kind, "actor": actor, "pos": pos,
                         "target": target, "subject": subject, "text": text})
         if quiet:

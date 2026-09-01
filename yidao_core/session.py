@@ -111,9 +111,63 @@ class Session:
     # ── 演化 ────────────────────────────────
 
     def _emit(self, tick, pos, text, kind, actor=None, target=None, **extra):
-        # extra 可携带附加线索（如传闻的第三方 subject），供观测层考据
+        # 世界不解释自己，世界只留证据（v6.1 §0.2/§2.5）：
+        # 事件文本剥离"（因：…）"注释——注释原文存 extra["因注"]（考据线索）；
+        # 叙事层只见干净的行为记录。
+        if "（因：" in text:
+            head, 因 = text.split("（因：", 1)
+            extra.setdefault("因注", 因.rstrip("）"))
+            text = head
+        # 现场读数（§2.2）：事发当刻的实况，按 kind 白名单现算——观测性改造，动力学不动
+        读数 = self._readings(kind, actor, target)
+        if 读数:
+            extra["readings"] = 读数
         self.on_event(tick=tick, pos=pos, text=text, kind=kind,
                       actor=actor, target=target, **extra)
+
+    # 现场读数白名单：什么 kind 带什么读数（没有的机制不硬塞）
+    _READINGS = {
+        "死亡": ("阳", "代"), "寿终": ("阳", "代"),
+        "战斗": ("阳", "pressure"), "报复": ("阳", "pressure", "铭记时长"),
+        "涌现反击": ("阳", "pressure", "阈值", "铭记时长"),
+        "涌现": ("阳", "pressure", "阈值"),
+        "抢夺": ("阳",), "夺屋成": ("阳", "pressure"), "夺回": ("阳", "铭记时长"),
+        "渡阳": ("阳",), "回光": ("阳",),
+        "进食": ("阳", "水分"), "饮水": ("阳", "水分"),
+        "分享": ("阳",), "救助": ("阳",), "借贷": ("阳",), "还债": ("阳",),
+        "赖账": ("阳",), "领悟": ("阳",), "家传": ("阳",), "传授": ("阳",),
+        "受冻": ("阳",), "淋雨": ("阳",), "诞育": ("阳",), "结为伴侣": ("阳",),
+    }
+
+    def _readings(self, kind, actor, target):
+        """按白名单现算现场读数：值取当事人事发当刻的实况（当事念的灵体字段）。
+        铭记时长：报复/夺回类事件，溯当事人心中的受辱记忆之龄。"""
+        白 = self._READINGS.get(kind)
+        if not 白 or actor is None:
+            return None
+        s = next((x for x in self.spirits if x.name == actor), None)
+        if s is None:
+            return None
+        out = {}
+        for k in 白:
+            if k == "阳":
+                out["阳"] = round(s.yang, 2)
+            elif k == "水分":
+                out["水分"] = round(s.水分, 2)
+            elif k == "代":
+                out["代"] = s.代
+            elif k == "pressure":
+                out["pressure"] = round(s.pressure, 3)
+            elif k == "阈值":
+                out["阈值"] = 1.0
+            elif k == "铭记时长" and target is not None:
+                辱 = [m for m in s.memories
+                      if m.类别 in ("被抢", "受辱", "夺屋") and m.对象 == target]
+                if 辱:
+                    out["铭记时长"] = round(
+                        (self.world.tick - min(m.念戳 for m in 辱))
+                        / TICKS_PER_DAY, 1)
+        return out or None
 
     def step(self):
         """推进一念：世界物理 → 众灵抉择 → 每日结算 → 天道监护 → 自然凝聚。"""

@@ -68,7 +68,10 @@ class ChainSelector:
     def __init__(self, ledger, spirits):
         self.ledger = ledger
         self.spirits = spirits
-        self.E = ledger.events
+        # 静默日常不进链不进报告（§2.3）：选链只见非静默事件；
+        # 但节点 id 是全簿的序号——byid 保持全簿索引（考据之锚不失）
+        self.E = [e for e in ledger.events if not e.get("quiet")]
+        self.byid = {e["id"]: e for e in ledger.events}
 
     # ═══════════ 链检测（自 fishbowl find_* 迁移改造）═══════════
 
@@ -281,10 +284,10 @@ class ChainSelector:
             nodes += [e["id"] for e in self.E
                       if e["kind"] in ("死亡", "寿终")
                       and e["actor"] in [s.name] + list(s.子女)]
-            nodes.sort(key=lambda i: self.E[i]["tick"])
+            nodes.sort(key=lambda i: self.byid[i]["tick"])
             if not nodes:
                 continue
-            卒 = sum(1 for e in (self.E[i] for i in nodes) if e["kind"] in ("死亡", "寿终"))
+            卒 = sum(1 for e in ((self.byid[i] for i in nodes)) if e["kind"] in ("死亡", "寿终"))
             out.append(Chain("家族链", s.name, nodes,
                              f"{s.name} 一门：诞育 {len(s.子女)} 口，亡故 {卒} 人",
                              [s.name] + list(s.子女)))
@@ -383,7 +386,8 @@ class ChainSelector:
                 continue
             抵 = next((x for x in self.E if x["kind"] == "迁抵"
                        and x["actor"] == e["actor"] and x["tick"] >= e["tick"]), None)
-            因 = e["text"].split("（因：", 1)[1].rstrip("）") if "（因：" in e["text"] else ""
+            # 因注：世界层观测性改造后，迁徙之由存于 extra["因注"]（世界不解释自己）
+            因 = e["extra"].get("因注", "")
             nodes = [e["id"]] + ([抵["id"]] if 抵 else [])
             尾 = (f" → 第{day_of(抵['tick'])}日抵{抵.get('pos')}" if 抵
                   else " → 至世界尽头仍未落脚")
@@ -399,7 +403,7 @@ class ChainSelector:
                   + self.技能链() + self.家族链() + self.债务链()
                   + self.传闻链() + self.迁徙链())
         for c in chains:
-            c.nodes.sort(key=lambda i: self.E[i]["tick"])   # 节点以 tick 为序（考据之纲）
+            c.nodes.sort(key=lambda i: self.byid[i]["tick"])   # 节点以 tick 为序（考据之纲）
             c.score_detail, c.score = _score(self.ledger, c.nodes)
         chains.sort(key=lambda c: -c.score)
         return chains

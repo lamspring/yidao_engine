@@ -17,14 +17,21 @@ import json
 from yidao_core.world import TICKS_PER_DAY
 
 
+# 静默日常白名单（§2.3）：存簿但默认不进报告、不进链、不进评分，仅调查接口可调。
+# 锻炼始不在其列：它是"立志"的抉择事件，是仇恨链的蓄势节拍——非日常琐事。
+QUIET_KINDS = {"进食", "饮水", "生食致病", "受冻", "淋雨"}
+
+
 class EventLedger:
     """事件簿：结构化地记下世界发来的每一条事件。"""
 
     def __init__(self):
         self.events: list[dict] = []
 
-    def record(self, tick, pos, text, kind, actor=None, target=None, **extra):
-        """on_event 回调：原样存录。id 即序号（世界确定性 → 序号即唯一锚）。"""
+    def record(self, tick, pos, text, kind, actor=None, target=None,
+               readings=None, **extra):
+        """on_event 回调：原样存录。id 即序号（世界确定性 → 序号即唯一锚）。
+        readings：现场读数（§2.2），无则 None；quiet：静默日常（§2.3）。"""
         self.events.append({
             "id": len(self.events),
             "tick": tick,
@@ -34,13 +41,17 @@ class EventLedger:
             "actor": actor,
             "target": target,
             "text": text,
+            "readings": readings,
+            "quiet": kind in QUIET_KINDS,
             "extra": dict(extra),
         })
 
     # ── 查询（供选链器）──────────────────────
-    def query(self, kind=None, actor=None, target=None, t0=None, t1=None) -> list:
-        """按 kind / actor / target / 时间窗 [t0, t1) 过滤，保持原序。"""
-        out = self.events
+    def query(self, kind=None, actor=None, target=None, t0=None, t1=None,
+              quiet=False) -> list:
+        """按 kind / actor / target / 时间窗 [t0, t1) 过滤，保持原序。
+        静默日常默认不见（quiet=True 才见）——调查接口的门。"""
+        out = self.events if quiet else [e for e in self.events if not e["quiet"]]
         if kind is not None:
             ks = {kind} if isinstance(kind, str) else set(kind)
             out = [e for e in out if e["kind"] in ks]
