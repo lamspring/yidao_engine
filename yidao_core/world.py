@@ -205,14 +205,27 @@ class Item:
             self.阳 = ITEM_YANG.get(self.类型, ITEM_YANG_TOOL)
 
     def 腐一步(self, 气温: float, 屋内: bool = False, 藏: float = 1.0) -> bool:
-        """每念腐坏一步；寒季腐慢，屋内储粮更慢，陶罐藏粮亦缓。返回 True 表示已腐尽。"""
-        rate = ITEM_DECAY.get(self.类型, 0.001)
-        rate *= float(np.clip(0.5 + 气温 / 30.0, 0.3, 1.8))
+        """每念腐坏一步（v8 定率化）：耗 = 腐率 × 当前存量——变化率与存量成正比，
+        e 式衰减，永不归零：有的鱼两日即臭，有的撑过五日，腐坏时刻不可预测。
+        余烬判尽：指数衰减永不到零，阳 < 0.5 视为腐尽（寒季腐慢，屋内/陶罐藏缓）。"""
+        耗 = self.阳 * ITEM_DECAY_RATE.get(self.类型, DEFAULT_DECAY_RATE)
+        耗 *= float(np.clip(0.5 + 气温 / 30.0, 0.3, 1.8))
         if 屋内:
-            rate *= 0.5
-        rate *= 藏
-        self.阳 -= rate
-        return self.阳 <= 0
+            耗 *= 0.5
+        耗 *= 藏
+        self.阳 -= 耗
+        return self.阳 < EMBER_ITEM      # 余烬判尽
+
+
+# ── 腐率表（v8-P0A 定率化）：全场无定额，衰变皆为"率 × 存量" ──
+# 需求书直式（DECAY/YANG）使其"两日即臭"的预期落空（生鱼需 21 日方烬，腐坏之痛链断），
+# 故按"等效旧寿"校准：率 = 旧定额 × ln(初阳/余烬阈) / 初阳——
+# 平均寿命与旧制齐平，腐坏时刻随条件（寒暑/屋内/陶罐）散开，余烬长明而不归零。
+EMBER_ITEM = 0.5        # 物品余烬判尽阈
+DEFAULT_DECAY_RATE = 0.001 / ITEM_YANG_TOOL * math.log(ITEM_YANG_TOOL / EMBER_ITEM)
+ITEM_DECAY_RATE = {k: v / ITEM_YANG.get(k, ITEM_YANG_TOOL)
+                   * math.log(ITEM_YANG.get(k, ITEM_YANG_TOOL) / EMBER_ITEM)
+                   for k, v in ITEM_DECAY.items()}
 
 
 @dataclass

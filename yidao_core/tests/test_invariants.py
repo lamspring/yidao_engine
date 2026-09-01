@@ -205,6 +205,37 @@ def test_jurassic():
        f"30 日存 {dict(collections.Counter(a.种类 for a in w.animals))}")
 
 
+# ── 8.6 定率化单元探针（v8-P0：e 式衰减的签名）────────────
+def test_rate_decay():
+    from yidao_core.world import Item
+    # 腐坏指数签名：率 × 存量（等效旧寿校准：平均寿命与旧制定额齐平）；
+    # 阳永不负值；余烬判尽（指数永不归零，< 0.5 视为腐尽）
+    a = Item("生鱼")          # 阳 30；校准率 0.09×ln(60)/30 ≈ 0.0123（气温 15 时系数 1.0）
+    初 = a.阳
+    步 = 0
+    while not a.腐一步(15.0) and 步 < 100000:
+        步 += 1
+        assert a.阳 > 0.0, "定率衰减下阳永不负值"
+    ok("定率·余烬判尽", 0.0 < a.阳 < 0.5, f"{步} 念后余 {a.阳:.3f}")
+    ok("定率·平均寿命与旧制齐平", 300 < 步 < 400,
+       f"生鱼 {步} 念腐尽（旧制定额 333 念；e 式衰减形变而寿不变）")
+    # 半衰期签名：ln2/0.0123 ≈ 56 念后存量约半
+    b = Item("生鱼")
+    for _ in range(56):
+        b.腐一步(15.0)
+    ok("定率·半衰期签名", abs(b.阳 / 初 - 0.5) < 0.03, f"56 念后余 {b.阳 / 初:.3f}")
+
+
+# ── 8.7 v8-P0 长程验收（60 日：制陶动机链不断、涌现仍发）──────
+def test_v8_p0():
+    ev = []
+    s = Session.genesis(seed=2026, on_event=lambda **kw: ev.append(kw))
+    s.run(TICKS_PER_DAY * 60)
+    制陶 = sum(1 for e in ev if e["kind"] == "领悟" and "陶" in e["text"]) \
+        + sum(1 for e in ev if e["kind"] == "制陶")
+    ok("定率·制陶动机链不断", 制陶 >= 1, f"制陶相关 {制陶} 起")
+
+
 # ── 9.5 五行相律（土与水）─────────────────────
 def test_phases():
     w = World(seed=42)
@@ -307,6 +338,8 @@ if __name__ == "__main__":
     test_seed_at()
     test_determinism()
     test_long_run()
+    test_rate_decay()
+    test_v8_p0()
     test_phases()
     test_components()
     test_jurassic()
