@@ -148,7 +148,9 @@ class 核心Mixin:
             return
 
         self._心情漂移()
-        self.pressure = max(0.0, self.pressure - PRESSURE_DECAY)
+        # 压力衰减定率化（v8-P0C）：乘性衰减——怨恨阴燃，余怒久郁，
+        # 高压闷烧（0.7-0.9）更常见，临界涌现更不可预测
+        self.pressure *= (1.0 - PRESSURE_DECAY)
 
         # 自己的屋塌了没有：世界是物质的，屋檐不会永远等你
         if self.hut is not None and self.hut not in world.buildings:

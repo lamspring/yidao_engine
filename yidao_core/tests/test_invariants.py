@@ -234,6 +234,8 @@ def test_v8_p0():
     制陶 = sum(1 for e in ev if e["kind"] == "领悟" and "陶" in e["text"]) \
         + sum(1 for e in ev if e["kind"] == "制陶")
     ok("定率·制陶动机链不断", 制陶 >= 1, f"制陶相关 {制陶} 起")
+    涌现 = sum(1 for e in ev if e["kind"] in ("涌现", "涌现反击"))
+    ok("定率·涌现仍发生", 涌现 >= 1, f"涌现 {涌现} 起")
 
 
 # ── 9.5 五行相律（土与水）─────────────────────
