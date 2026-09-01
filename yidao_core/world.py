@@ -155,6 +155,17 @@ PATH_AT = 26.0          # 同一格被踩踏次数过此成"径"
 PATH_DECAY = 0.012      # 径每念荒芜（久无人走则消失）
 PATH_COST = 0.5         # 径上移动耗阳折半
 
+# ── 逸散衰率与余烬阈（v8-P0B 定率化）：率 = 旧定额 / 初阳 ──
+# 内在衰变皆为"率 × 存量"；外力冲击（雨蚀/风损/冻裂/雨淤/汲耗）保持定额不动
+HUT_DECAY_RATE = HUT_DECAY / HUT_YANG0        # 屋：0.000375/念
+FIRE_DECAY_RATE = 0.06 / FIRE_YANG0           # 火：0.001/念
+FENCE_DECAY_RATE = 0.01 / 60.0                # 栏：0.000167/念
+WELL_DECAY_RATE = 0.012 / WELL_YANG0          # 井：0.000171/念
+CARRION_DECAY_RATE = CARRION_DECAY / CARRION_YANG  # 尸骸：0.032/念
+PATH_DECAY_RATE = PATH_DECAY / PATH_AT        # 径：0.000462/念
+EMBER_BUILD = 0.5     # 屋/井/栏/尸余烬阈：将塌未塌的危房是故事温床
+EMBER_FIRE = 1.0      # 火星余烬最耐久：将熄之火久久不明灭
+
 # ── 物品：有阳存量、会腐坏，腐速因材质而异（鱼鲜最快，骨石最慢）──
 ITEM_DECAY = {"生鱼": 0.09, "生肉": 0.06, "奶": 0.08, "蛋": 0.04, "果": 0.05,
               "熟肉": 0.02, "熟鱼": 0.02, "谷种": 0.005,
@@ -643,12 +654,12 @@ class World:
         # 物候节点：寒暑交替、初霜、酷暑——天地自有节律
         self._物候(t, 季, 温均)
 
-        # 建筑：阳之逸散 + 风雨积水之损——逸散与剥蚀皆就地归还炁场（物归）；
-        # 阳尽则塌，形阴与仓储之余尽数归还，化为屋骸
+        # 建筑：内在逸散定率（率 × 存量）+ 外力冲击定额（雨蚀风损冻裂，不动）——
+        # 皆就地归还炁场（物归）；余烬判塌：新屋挺拔经久，老屋将塌未塌（危房是故事温床）
         for b in list(self.buildings):
-            损 = HUT_DECAY
+            损 = b.阳 * HUT_DECAY_RATE                       # 内在衰变：率 × 存量
             if self.rain_mask[b.y, b.x]:
-                损 += HUT_RAIN_DMG * (1.5 if b.阳 < HUT_LEAK_AT else 1.0)
+                损 += HUT_RAIN_DMG * (1.5 if b.阳 < HUT_LEAK_AT else 1.0)   # 外力定额
             损 += self.wind_speed * HUT_WIND_DMG * (1.0 + self.height[b.y, b.x] / 9.0 * 1.5)
             if self.water[b.y, b.x] > 0.8:
                 损 += (self.water[b.y, b.x] - 0.8) * HUT_FLOOD_DMG
@@ -668,9 +679,9 @@ class World:
                     self.物归(b.y, b.x, 旧 - it.阳)
                     存仓.append(it)
             b.仓储 = 存仓
-            if b.阳 <= 0:
+            if b.阳 < EMBER_BUILD:      # 余烬判塌
                 self.buildings.remove(b)
-                self.物归(b.y, b.x, YIN_HUT
+                self.物归(b.y, b.x, b.阳 + YIN_HUT
                           + sum(it.阳 + 物形阴(it.类型) for it in b.仓储))
                 self.collapsed_huts += 1
                 self.add_mark("屋骸", b.y, b.x, HUT_MARK_TTL, 标签=b.主人)
@@ -695,46 +706,50 @@ class World:
                     "kind": "田枯", "pos": (f.y, f.x), "actor": f.主人,
                     "text": f"{f.主人} 的农田毁了（因：水土失调）"})
 
-        # 火堆：燃柴续阳，燃损归还炁场；露天遇雨则熄，形阴亦还
+        # 火堆：内在燃损定率（大火烈烈速燃，星火余烬经久——燃烧速率 ∝ 燃料存量）；
+        # 雨熄为外力定额（不动）；余烬判熄（阳 < 1.0，火星余烬最耐久）
         for f in list(self.fires):
-            耗 = min(FIRE_DECAY, f.阳)
+            耗 = f.阳 * FIRE_DECAY_RATE          # 内在衰变：率 × 存量
             f.阳 -= 耗
             self.物归(f.y, f.x, 耗)
             if not f.屋内 and self.rain_mask[f.y, f.x]:
-                耗 = min(FIRE_RAIN_DMG, f.阳)
+                耗 = min(FIRE_RAIN_DMG, f.阳)    # 外力冲击：定额不动
                 f.阳 -= 耗
                 self.物归(f.y, f.x, 耗)
-            if f.阳 <= 0:
+            if f.阳 < EMBER_FIRE:       # 余烬判熄
                 self.fires.remove(f)
-                self.物归(f.y, f.x, YIN_FIRE)
+                self.物归(f.y, f.x, f.阳 + YIN_FIRE)
                 # 火生土：火熄成灰，灰肥其土——烧尽之结，恰是草木之粮
                 self.grass[f.y, f.x] = min(1.0, self.grass[f.y, f.x] + FIRE_ASH_GRASS)
                 self._events.append({
                     "kind": "火熄", "pos": (f.y, f.x), "actor": f.主人,
                     "text": f"{f.主人} 的火堆熄了（因：薪尽而火传难继）"})
 
-        # 尸骸腐坏，尽则归土（尸为泵所养之生物质，不入器物账）；围栏缓腐，腐者归还
+        # 尸骸腐坏定率（腐速 ∝ 存量）；余烬判尽（尸为泵所养之生物质，不入器物账）
         for c in list(self.carrions):
-            c.阳 -= CARRION_DECAY * float(np.clip(0.5 + self.temp[c.y, c.x] / 30.0, 0.3, 1.8))
-            if c.阳 <= 0:
+            c.阳 -= c.阳 * CARRION_DECAY_RATE \
+                * float(np.clip(0.5 + self.temp[c.y, c.x] / 30.0, 0.3, 1.8))
+            if c.阳 < EMBER_BUILD:
                 self.carrions.remove(c)
+        # 围栏缓腐定率；余烬判废，形阴归还
         for fe in list(self.fences):
-            耗 = min(0.01, fe.阳)
+            耗 = fe.阳 * FENCE_DECAY_RATE       # 内在衰变：率 × 存量
             fe.阳 -= 耗
             self.物归(fe.y, fe.x, 耗)
-            if fe.阳 <= 0:
+            if fe.阳 < EMBER_BUILD:
                 self.fences.remove(fe)
-                self.物归(fe.y, fe.x, YIN_FENCE)
+                self.物归(fe.y, fe.x, fe.阳 + YIN_FENCE)
 
         # 井：井壁渐淤（雨携泥入、用久则淤）——井为地形之变，非器物，
         # 其"阳"是通畅度（地形之状态，如径之踩踏数），不在能量账内。
         # 五行相律（土）：沙地凿井易塌——沙无结构性，井壁通畅三倍速溃
+        # v8-P0B：井之内淤改定率（率 × 通畅度）；雨携泥入为外力定额（不动）
         for wl in list(self.wells):
             沙蚀 = 3.0 if self.土相(wl.y, wl.x) == "沙" else 1.0
-            wl.阳 -= WELL_DECAY * 沙蚀
+            wl.阳 -= wl.阳 * WELL_DECAY_RATE * 沙蚀
             if self.rain_mask[wl.y, wl.x]:
-                wl.阳 -= WELL_RAIN_SILT
-            if wl.阳 <= 0:
+                wl.阳 -= WELL_RAIN_SILT          # 外力冲击：定额不动
+            if wl.阳 < EMBER_BUILD:              # 余烬判废
                 self.wells.remove(wl)
                 self.add_mark("井骸", wl.y, wl.x, WELL_MARK_TTL, 标签=wl.主人)
                 self._events.append({
@@ -742,8 +757,9 @@ class World:
                     "text": f"{wl.主人} 凿的井塌淤成坑（因：年久失淘，阳尽则废）"})
 
         # 径：久无人走则荒芜；踩踏过阈则成径——村落间的路自己长出来
-        np.subtract(self.tread, PATH_DECAY, out=self.tread)
-        np.maximum(self.tread, 0.0, out=self.tread)
+        # 径之荒芜定率（v8-P0B）：tread ×= (1 - 率)——旧径荒芜先快后慢，
+        # 残影长存："荒废多年的故道隐约可辨"
+        self.tread *= (1.0 - PATH_DECAY_RATE)
         新径 = (self.tread >= PATH_AT) & (self._tread_was < PATH_AT)
         if 新径.any():
             ys, xs = np.nonzero(新径)
