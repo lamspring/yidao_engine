@@ -25,8 +25,11 @@ class 核心Mixin:
         self.dna = _成形基因组(rng, env or {},
                              None if 父母 is None else (父母[0].dna, 父母[1].dna),
                              0 if 父母 is None else max(p.代 for p in 父母) + 1)
-        # 体质差异：有人耐饿，有人消化快——众灵的饥饱节律由此错开
-        self.metabo = 0.8 + 0.45 * self.dna["体质"]
+        # 体质差异：有人耐饿，有人消化快——众灵的饥饱节律由此错开。
+        # v8-P2：体质位点已正态化，代谢经遗传链自得钟形，另加正态微扰（σ 0.02），
+        # 截断 [0.8, 1.25]——"永动机"与"病弱"各占约 2%，出现时值得一句旁白
+        self.metabo = min(1.25, max(0.8, 0.8 + 0.45 * self.dna["体质"]
+                                    + rng.gauss(0.0, 0.02)))
 
         # 性格特质：谨慎 / 好斗 / 亲和——初生有定数（dna），经历可改之（心态漂移）
         self.caution = self.dna["谨慎"]

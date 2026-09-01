@@ -316,6 +316,46 @@ def test_valves_silent():
            f"兽 {len(s.world.animals)} 树 {len(s.world.trees)}")
 
 
+# ── 8.10 传闻长尾与正态探针（v8-P1C / P2 验收）────────────
+def test_gossip_long_tail():
+    ev = []
+    s = Session.genesis(seed=2026, on_event=lambda **kw: ev.append(kw))
+    s.run(TICKS_PER_DAY * 60)
+    传闻 = [e for e in ev if e["kind"] in ("传闻", "传闻失真")]
+    ok("传闻·仍多发生", len(传闻) > 50, f"{len(传闻)} 起")
+    链 = [m.链长 for x in s.spirits for m in x.memories if m.类别 == "传闻"]
+    远来 = [h for h in 链 if h >= 4]
+    ok("传闻·长尾稀有", len(链) > 0 and len(远来) / len(链) < 0.05,
+       f"链长≥4 占比 {len(远来)}/{len(链)}")
+    阀 = [e for e in ev if e["kind"] == "安全阀"]
+    ok("传闻·安全阀静默", not 阀, f"触发 {len(阀)} 次")
+
+
+def test_normalcy():
+    import random
+    from yidao_core.spirit.base import _成形基因组
+    rng = random.Random(7)
+    env = {k: 0.5 for k in ("谨慎", "悍戾", "亲和", "悟性", "体质", "渔猎",
+                            "建造", "百工", "种植", "畜牧", "火食")}
+    样 = [_成形基因组(rng, env, None, 0) for _ in range(400)]
+    for 位 in ("谨慎", "亲和", "悟性", "体质"):
+        vals = [d[位] for d in 样]
+        assert all(0.0 <= v <= 1.0 for v in vals), "截断后仍有界"
+        均 = sum(vals) / len(vals)
+        ok(f"正态·{位}钟形居中", abs(均 - 0.5) < 0.08, f"均值 {均:.3f}")
+        极端 = sum(1 for v in vals if v > 0.85 or v < 0.15)
+        ok(f"正态·{位}两端稀有", 极端 / len(vals) < 0.08,
+           f"极端占比 {极端 / len(vals):.1%}")
+    # metabo：经体质位点正态化 + 微扰——"永动机"与"病弱"各占约 2%
+    from yidao_core.spirit import Spirit
+    rng2 = random.Random(42)
+    ms = [Spirit(f"测{i}", 0, 0, 0, rng2, env=env).metabo for i in range(400)]
+    assert all(0.8 <= m <= 1.25 for m in ms), "metabo 截断有界"
+    极端 = sum(1 for m in ms if m > 1.2 or m < 0.85)
+    ok("正态·metabo 两端稀有", 极端 / len(ms) < 0.08,
+       f"两端占比 {极端 / len(ms):.1%}")
+
+
 # ── 9.5 五行相律（土与水）─────────────────────
 def test_phases():
     w = World(seed=42)
@@ -422,6 +462,8 @@ if __name__ == "__main__":
     test_v8_p0()
     test_gleam()
     test_valves_silent()
+    test_gossip_long_tail()
+    test_normalcy()
     test_phases()
     test_components()
     test_jurassic()

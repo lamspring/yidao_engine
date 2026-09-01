@@ -832,7 +832,8 @@ class World:
                 self.qi.归还(a.y, a.x, 阳=扣)
                 a.年龄 += 1
                 a.产物念 = max(0, a.产物念 - 1)
-                if a.阳 <= 0 or a.年龄 > p["寿日"] * TICKS_PER_DAY * rng.uniform(0.9, 1.1):
+                if a.阳 <= 0 or a.年龄 > p["寿日"] * TICKS_PER_DAY \
+                        * min(1.15, max(0.85, rng.normal(1.0, 0.05))):   # v8-P2 寿数扰动正态化
                     _beast_mod.兽亡(self, a)
                     self._events.append({
                         "kind": "畜死", "pos": (a.y, a.x), "actor": a.驯主,

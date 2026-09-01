@@ -173,8 +173,8 @@ def 兽行(world, a, spirits, rng):
     a.水分 -= 排
     world.water[a.y, a.x] += 排 * BODY2FIELD
 
-    # 死生：阳尽、寿终
-    if a.阳 <= 0 or a.年龄 > 寿念 * rng.uniform(0.9, 1.1):
+    # 死生：阳尽、寿终（v8-P2：寿数扰动正态化——normal(1.0, 0.05) 截断 [0.85, 1.15]）
+    if a.阳 <= 0 or a.年龄 > 寿念 * min(1.15, max(0.85, rng.normal(1.0, 0.05))):
         兽亡(world, a)
         return
     a.年龄 += 1

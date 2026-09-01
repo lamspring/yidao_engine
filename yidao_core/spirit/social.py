@@ -256,18 +256,30 @@ class 社交Mixin:
     def _传闲话(self, spirits: list, b, tick: int, report, rng):
         """交谈时概率性谈论第三方：把一条关于他人的记忆说给 b 听。
         b 获得二手记忆（类别"传闻"）。传播会失真：张冠李戴、抢夺传成杀人；
-        失真率随传播链长度上升。话传三站而止。"""
+        失真率随传播链长度上升。
+        v8-P1C：链长硬停退位——改每站续传概率（0.55），欲再传则掷之，
+        不过则此链止于此口；链长 ≤ 6 为安全阀（留痕）。大多数传闻一两站而止，
+        偶有五站远来的血案传闻——远方来的消息自带稀有性与戏剧性。"""
         if rng.random() > GOSSIP_CHANCE:
             return
         # 挑一桩关于第三方的旧事作谈资（不与 b 重复人尽皆知之事）
         素材 = [m for m in self.memories
                 if m.对象 not in (None, self.name, b.name)
-                and m.权重 >= 0.2 and m.链长 < GOSSIP_MAX_HOP
+                and m.权重 >= 0.2
                 and (m.类别 in _GOSSIP_DEED or (m.类别 == "传闻" and m.褒贬 != 0))
                 and not any(x.类别 == "传闻" and x.对象 == m.对象 for x in b.memories)]
         if not 素材:
             return
         src = 素材[rng.randrange(len(素材))]
+        # 每站续传概率：传闻欲再传，掷之
+        if src.类别 == "传闻" and rng.random() > GOSSIP_SURVIVE:
+            return
+        if src.链长 >= 6:
+            # 安全阀留痕：链长触及上限（续传失控——设计上罕见）
+            report(tick, (self.y, self.x),
+                   "【越界·安全阀】传闻链长触及上限（因：续传失控，硬顶接管）",
+                   kind="安全阀", actor=self.name)
+            return
         对象 = src.对象
         if src.类别 == "传闻":
             褒贬, 谈资 = src.褒贬, ("行止不端" if src.褒贬 < 0 else "名声在外")
