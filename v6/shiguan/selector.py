@@ -20,9 +20,9 @@ _恩 = {"分享", "救助", "庇护", "还债", "澄清", "两清", "同悼", "�
 _仇 = {"抢夺", "战斗", "报复", "涌现反击", "赖账", "夺屋成", "谎言戳穿", "传闻失真"}
 _生 = {"诞育", "生", "点化"}
 _死 = {"死亡", "寿终", "悼念"}
-# 闭合结局：死亡/离去/和解/事成/得法
+# 闭合结局：死亡/离去/和解/事成/得法/报复
 _闭合 = {"死亡", "寿终", "还债", "澄清", "两清", "报仇成", "夺回", "迁抵",
-         "建成", "取火", "制陶", "渡阳", "结为伴侣", "井成"}
+         "建成", "取火", "制陶", "渡阳", "结为伴侣", "井成", "报复", "涌现反击"}
 
 
 def day_of(tick: int) -> int:
@@ -31,12 +31,13 @@ def day_of(tick: int) -> int:
 
 @dataclass
 class Chain:
-    """一条因果链：节点 = 事件 id 序列（可考据）。"""
+    """一条因果链：节点 = 事件 id 序列（可考据）；节拍 = 折叠后的叙事单位。"""
     链型: str
     主体: str
     nodes: list[int]
     summary: str
     actors: list[str] = field(default_factory=list)
+    beats: list = field(default_factory=list)   # [(kind, [ids...])] 节拍折叠视图
     score_detail: dict = field(default_factory=dict)
     score: float = 0.0
 
@@ -47,15 +48,35 @@ def _polarity(kinds: list[str]) -> float:
     return span / 4.0
 
 
-def _score(ledger, nodes: list[int]) -> tuple[dict, float]:
-    """可讲述性评分：长度 / 转折 / 情感跨度 / 结局闭合 / 动机可得率（S1 恒 0, S2 填真值）。"""
-    kinds = [ledger.by_id(i)["kind"] for i in nodes]
-    n = len(nodes)
-    长度 = 1.0 if 3 <= n <= 8 else (0.5 if n == 2 else max(0.0, 1.0 - (n - 8) / 8.0))
+def _fold(byid, nodes: list[int]) -> list:
+    """节拍折叠（v6.1 §3.1）：同类连续节点折叠为一节拍。
+    折叠是评分层的视图变换——事件簿与链的原始节点不动（考据仍指原始事件 id）。
+    返回 [(kind, [ids...])]，如 13 条锻炼始 → 1 个"蓄势"节拍。"""
+    beats = []
+    for i in nodes:
+        e = byid[i]
+        if beats and beats[-1][0] == e["kind"]:
+            beats[-1][1].append(i)
+        else:
+            beats.append((e["kind"], [i]))
+    return beats
+
+
+def _score(byid, beats: list) -> tuple[dict, float]:
+    """可讲述性评分（§3.1：按节拍重算）：
+    长度/转折/情感跨度/结局闭合皆以节拍为单位；
+    动机可得率 = 可调出现场读数或观心快照的节拍占比（真值，S2 起）。"""
+    kinds = [k for k, _ in beats]
+    n = len(beats)
+    # 长度：3~8 节拍为佳；过短无事（n<3 线性递减），过长难讲（n>8 渐减）
+    长度 = (1.0 if 3 <= n <= 8 else n / 3.0 if n < 3
+            else max(0.0, 1.0 - (n - 8) / 8.0))
     转折 = min(1.0, max(0, len(set(kinds)) - 1) / 3.0)
     跨度 = _polarity(kinds)
     闭合 = 1.0 if kinds and kinds[-1] in _闭合 else 0.3
-    动机 = 0.0      # S2 观心快照接入后填真值
+    有 = sum(1 for _, ids in beats
+             if any(byid[i].get("readings") or "minds" in byid[i] for i in ids))
+    动机 = round(有 / max(1, n), 2)
     detail = {"长度": round(长度, 2), "转折": round(转折, 2), "情感跨度": round(跨度, 2),
               "结局闭合": round(闭合, 2), "动机可得率": 动机}
     total = 0.20 * 长度 + 0.25 * 转折 + 0.20 * 跨度 + 0.20 * 闭合 + 0.15 * 动机
@@ -386,7 +407,7 @@ class ChainSelector:
                 continue
             抵 = next((x for x in self.E if x["kind"] == "迁抵"
                        and x["actor"] == e["actor"] and x["tick"] >= e["tick"]), None)
-            # 因注：世界层观测性改造后，迁徙之由存于 extra["因注"]（世界不解释自己）
+            # 因注：世界层观测性改造后, 迁徙之由存于 extra["因注"]（世界不解释自己）
             因 = e["extra"].get("因注", "")
             nodes = [e["id"]] + ([抵["id"]] if 抵 else [])
             尾 = (f" → 第{day_of(抵['tick'])}日抵{抵.get('pos')}" if 抵
@@ -404,7 +425,8 @@ class ChainSelector:
                   + self.传闻链() + self.迁徙链())
         for c in chains:
             c.nodes.sort(key=lambda i: self.byid[i]["tick"])   # 节点以 tick 为序（考据之纲）
-            c.score_detail, c.score = _score(self.ledger, c.nodes)
+            c.beats = _fold(self.byid, c.nodes)                # 节拍折叠（§3.1）
+            c.score_detail, c.score = _score(self.byid, c.beats)
         chains.sort(key=lambda c: -c.score)
         return chains
 
@@ -456,11 +478,15 @@ class ChainSelector:
               "chains": []}
         for i, c in enumerate(chains[:10]):
             d = "、".join(f"{k} {v}" for k, v in c.score_detail.items())
+            节拍 = " → ".join(k + (f"×{len(ids)}" if len(ids) > 1 else "")
+                             for k, ids in c.beats)
             md += [f"### {i + 1}. [{c.链型}] {c.summary}", "",
                    f"评分 {c.score}（{d}）", "",
+                   f"节拍：{节拍}", "",
                    f"节点：{' '.join('E' + str(n) for n in c.nodes)}", ""]
             js["chains"].append({"链型": c.链型,  "主体": c.主体,  "梗概": c.summary,
                                  "nodes": c.nodes, "actors": c.actors,
+                                 "beats": [(k, ids) for k, ids in c.beats],
                                  "score": c.score, "score_detail": c.score_detail})
         return "\n".join(md), js
 

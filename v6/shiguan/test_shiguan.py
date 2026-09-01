@@ -171,6 +171,27 @@ def test_s2_观心快照():
     ok("快照·双跑逐字节一致", ja == jb)
 
 
+def test_s2_节拍折叠重校():
+    """§3.1 硬指标：种子 42——桑的仇恨链入 Top-3；无淋雨前因的建造链退出 Top-3。"""
+    s, led = 一缸(42, 60)
+    sel = ChainSelector(led, s.spirits)
+    chains = sel.detect_all()
+    top3 = chains[:3]
+    ok("节拍·桑链入 Top-3",
+       any(c.主体 == "桑" and c.链型 == "仇恨链" for c in top3),
+       f"Top3 主体 {[c.主体 for c in top3]}")
+    桑链 = next((c for c in chains if c.主体 == "桑" and c.链型 == "仇恨链"), None)
+    assert 桑链 is not None
+    ok("节拍·13 锻炼折叠为一拍",
+       any(k == "锻炼始" and len(ids) >= 10 for k, ids in 桑链.beats),
+       f"节拍 {[(k, len(ids)) for k, ids in 桑链.beats]}")
+    ok("节拍·原始节点不动（考据不失）", len(桑链.nodes) >= 13,
+       f"nodes {len(桑链.nodes)}")
+    ok("节拍·无淋雨建造链退出 Top-3",
+       all(not (c.链型 == "建造链" and "夜雨淋身" not in c.summary) for c in top3),
+       "")
+
+
 def test_s2_调查接口():
     """§2.4：对白名单事件跑 why()——三件套齐全、旁证 tick 有序、时效标注齐全。"""
     from v6.shiguan.inquest import Inquest
@@ -208,5 +229,6 @@ if __name__ == "__main__":
     test_s2_桑式旁证不断档()
     test_s2_观心快照()
     test_s2_调查接口()
+    test_s2_节拍折叠重校()
     print("─" * 40)
     print(f"全部通过（{PASS} 项）。史官的账，先死后著。")
