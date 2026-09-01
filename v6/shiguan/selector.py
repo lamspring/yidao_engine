@@ -9,6 +9,10 @@
 
 杀手特性：可讲述性报告 = 世界丰富度体检仪表盘——
 史官写不出好链不是史官的问题，是世界哪里不够丰富的信号。
+
+纪律红线（作者原话，一字不动写进实现）：
+**只做信息补全——任何情况下不得去重、合并、删除事件或链；
+同一事实出现两次也是能量驱动的真实涌现，簿与报告均须原样保留。**
 """
 
 from dataclasses import dataclass, field
@@ -126,7 +130,7 @@ class ChainSelector:
             nodes.append(报仇["id"])
             标签 = "报复" if 报仇["kind"] == "报复" else "临界反击"
             out.append(Chain("仇恨链", v, nodes,
-                             f"{v}: 被抢(第{day_of(t)}日) → 铭记 → "
+                             f"{v}: 被{rob}抢(第{day_of(t)}日) → 铭记 → "
                              f"{标签}{rob}(第{day_of(报仇['tick'])}日)",
                              [v, rob]))
         return out
@@ -223,7 +227,7 @@ class ChainSelector:
             nodes += 锻炼 + [后报["id"]]
             标签 = "夺回" if 后报["kind"] == "夺回" else "报复"
             out.append(Chain("夺屋链", v, nodes,
-                             f"{v}: 被夺屋(第{day_of(t)}日) → 铭记 → "
+                             f"{v}: 被{rob}夺屋(第{day_of(t)}日) → 铭记 → "
                              f"{标签}{rob}(第{day_of(后报['tick'])}日)", [v, rob]))
         return out
 

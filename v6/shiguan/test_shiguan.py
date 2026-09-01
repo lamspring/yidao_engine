@@ -219,16 +219,53 @@ def test_s2_调查接口():
            r["actor_mind"] is not None and "终局档案" in r["actor_mind"]["时效"])
 
 
+def test_s2e_梗概对手方():
+    """S2 验收后增补①：双人链的一句话梗概必须含关键对手方（两端可区分）。
+    只做信息补全——不去重、不合并、不删除。"""
+    s, led = 一缸(42, 60)
+    sel = ChainSelector(led, s.spirits)
+    chains = sel.detect_all()
+    仇恨 = [c for c in chains if c.链型 in ("仇恨链", "夺屋链")]
+    ok("梗概·双人链存在", bool(仇恨), f"{len(仇恨)} 条")
+    for c in 仇恨:
+        对手 = c.actors[1]
+        ok(f"梗概·{c.主体}之链对手方两端可辨",
+           c.summary.count(对手) >= 2, f"{c.summary}")
+    # 总账不动：链数与事件数与增补前一致（信息补全不动账）
+    ok("增补不动账·链数依旧", len(chains) == len(sel.detect_all()))
+
+
+TESTS = [
+    ("test_ledger_determinism", "快"),
+    ("test_口径一致", "中"),
+    ("test_reports", "慢"),
+    ("test_死水种子", "慢"),
+    ("test_s2_去注释与现场读数", "慢"),
+    ("test_s2_桑式旁证不断档", "慢"),
+    ("test_s2_观心快照", "慢"),
+    ("test_s2_调查接口", "慢"),
+    ("test_s2_节拍折叠重校", "慢"),
+    ("test_s2e_梗概对手方", "慢"),
+]
+
+
 if __name__ == "__main__":
-    print("史官 S1 验收\n" + "─" * 40)
-    test_ledger_determinism()
-    test_口径一致()
-    test_reports()
-    test_死水种子()
-    test_s2_去注释与现场读数()
-    test_s2_桑式旁证不断档()
-    test_s2_观心快照()
-    test_s2_调查接口()
-    test_s2_节拍折叠重校()
+    import argparse
+    ap = argparse.ArgumentParser(
+        prog="test_shiguan",
+        description="史官验收套件：--only 单跑某子测试，--tier 只跑某档（快/中/慢）")
+    ap.add_argument("--only", default="")
+    ap.add_argument("--tier", default="")
+    args = ap.parse_args()
+
+    选 = [(n, t) for n, t in TESTS if (not args.only or n == args.only)
+          and (not args.tier or t == args.tier)]
+    if not 选:
+        print("无此子测试或档。可选：", "、".join(n for n, _ in TESTS))
+        sys.exit(1)
+    print("史官验收" + (f" · {args.only or args.tier}" if (args.only or args.tier) else " · 全套"))
+    print("─" * 40)
+    for n, _t in 选:
+        globals()[n]()
     print("─" * 40)
     print(f"全部通过（{PASS} 项）。史官的账，先死后著。")
