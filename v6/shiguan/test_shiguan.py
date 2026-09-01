@@ -33,6 +33,7 @@ def ok(name, cond, detail=""):
 def 一缸(seed, days=60):
     led = EventLedger()
     s = Session.genesis(seed=seed, on_event=led.record)
+    led.bind(s.spirits)
     s.run(days * TICKS_PER_DAY)
     return s, led
 
@@ -137,6 +138,66 @@ def test_s2_桑式旁证不断档():
        f"锻炼 {len(练)} 条，反击 {len(仇链)} 条")
 
 
+def test_s2_观心快照():
+    """§2.6：白名单事件全带快照；非白名单零快照；快照不动灵体；双跑一致。"""
+    import copy
+    from v6.shiguan.recorder import SNAPSHOT_KINDS
+    s, led = 一缸(42, 60)
+    白 = [e for e in led.events if e["kind"] in SNAPSHOT_KINDS]
+    ok("快照·白名单全带", all("minds" in e for e in 白),
+       f"{sum(1 for e in 白 if 'minds' in e)}/{len(白)}")
+    非 = [e for e in led.events if e["kind"] not in SNAPSHOT_KINDS]
+    ok("快照·非白名单零带", all("minds" not in e for e in 非))
+    # 快照前后灵体零改动：抓 20 次快照，比对灵体指纹（值级内容，不比对象身份）
+    import random
+
+    def 指纹(x):
+        return (x.yang, x.水分, x.pressure, x.strength, x.代,
+                tuple((m.要义, m.类别, m.对象, round(m.权重, 3)) for m in x.memories),
+                tuple(sorted(x.knowledge)), tuple(sorted(x.mood.items())),
+                tuple(x.goals), len(x.bag))
+
+    灵 = [x for x in s.spirits if x.alive]
+    random.Random(7).shuffle(灵)
+    for x in 灵[:20]:
+        前 = 指纹(x)
+        led._快照(x.name)
+        ok(f"快照·{x.name} 灵体零改动", 前 == 指纹(x))
+    # 双跑：带快照的事件簿仍逐字节一致
+    _, a = 一缸(7, 10)
+    _, b = 一缸(7, 10)
+    ja = json.dumps(a.events, ensure_ascii=False, sort_keys=True)
+    jb = json.dumps(b.events, ensure_ascii=False, sort_keys=True)
+    ok("快照·双跑逐字节一致", ja == jb)
+
+
+def test_s2_调查接口():
+    """§2.4：对白名单事件跑 why()——三件套齐全、旁证 tick 有序、时效标注齐全。"""
+    from v6.shiguan.inquest import Inquest
+    from v6.shiguan.recorder import SNAPSHOT_KINDS
+    s, led = 一缸(42, 60)
+    iq = Inquest(led, s.spirits)
+    白 = [e for e in led.events if e["kind"] in SNAPSHOT_KINDS][:10]
+    ok("调查·白名单事件存在", bool(白), f"{len(白)} 条")
+    for e in 白:
+        r = iq.why(e["id"])
+        assert set(r.keys()) == {"readings", "actor_mind", "旁证"}, r.keys()
+        assert r["actor_mind"] is not None and "时效" in r["actor_mind"]
+        # 旁证 tick 有序
+        ticks = [led.by_id(i)["tick"] for i in r["旁证"]]
+        assert ticks == sorted(ticks)
+    ok("调查·三件套齐全率 100%", True)
+    ok("调查·旁证 tick 有序 100%", True)
+    ok("调查·时效标注齐全 100%", True)
+    # 快照缺失时回落终局档案并带警告
+    无快照 = next((e for e in led.events
+                   if e["kind"] not in SNAPSHOT_KINDS and e["actor"]), None)
+    if 无快照:
+        r = iq.why(无快照["id"])
+        ok("调查·终局档案带时效警告",
+           r["actor_mind"] is not None and "终局档案" in r["actor_mind"]["时效"])
+
+
 if __name__ == "__main__":
     print("史官 S1 验收\n" + "─" * 40)
     test_ledger_determinism()
@@ -145,5 +206,7 @@ if __name__ == "__main__":
     test_死水种子()
     test_s2_去注释与现场读数()
     test_s2_桑式旁证不断档()
+    test_s2_观心快照()
+    test_s2_调查接口()
     print("─" * 40)
     print(f"全部通过（{PASS} 项）。史官的账，先死后著。")
