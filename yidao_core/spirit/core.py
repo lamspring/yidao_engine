@@ -257,6 +257,16 @@ class 核心Mixin:
                 and self.悟性 >= GLEAM_SAGE_WIT and self.yang > 40.0:
             for b in self._邻居们(spirits):
                 if b._回光 is not None:
+                    # v8 §七·7.1：唯阳竭者可渡，寿尽者不渡——
+                    # 阳竭是人事，寿尽是天文：渡得了阳，续不了命
+                    if tick - b.诞生念 >= b.寿数:
+                        if not b._被摇头:     # 每位寿终回光者至多报一次（防刷屏）
+                            b._被摇头 = True
+                            report(tick, (self.y, self.x),
+                                   f"{self.name} 望着回光中的 {b.name}，缓缓摇头"
+                                   "（因：阳寿已尽，非阳竭，渡阳无益）",
+                                   kind="不渡", actor=self.name, target=b.name)
+                        break
                     渡 = min(self.yang - 30.0, 12.0)   # 渡者留存，倾囊有限
                     if 渡 > 0:
                         转阳(world, self, b, 渡, 率=0.5)   # 渡二得一（余者归场）

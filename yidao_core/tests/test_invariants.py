@@ -300,6 +300,35 @@ def test_gleam():
     丙.decide(s3.world, s3.spirits, s3.world.tick, s3._emit, s3.rng)
     ok("回光·横死无回光", 丙._回光 is None, "战斗负伤者阳破阈而不入回光")
 
+    # 四、v8 §七·7.1：寿终回光者邻有悟道者 → 不渡 → 窗尽安然闭目
+    # （阳竭是人事，寿尽是天文——渡得了阳，续不了命）
+    ev4 = []
+    s4 = Session.genesis(seed=2026, on_event=lambda **kw: ev4.append(kw))
+    w4 = s4.world
+    甲4, 乙4 = s4.spirits[0], s4.spirits[1]
+    甲4.yang = 0.5
+    甲4.诞生念 = 0
+    甲4.寿数 = w4.tick          # 阳寿已尽（寿终回光者）
+    甲4._斗伤念 = -999
+    甲4._回光 = w4.tick
+    甲4._回光过 = True
+    乙4.knowledge = {"建造", "种植", "制器", "取火", "烹饪", "渔猎"}
+    乙4.悟性 = 0.8
+    乙4.yang = 90.0
+    乙4.y, 乙4.x = 甲4.y, 甲4.x
+    乙前 = 乙4.yang
+    乙4.decide(w4, s4.spirits, w4.tick, s4._emit, s4.rng)
+    ok("回光·寿尽者不渡", 甲4._回光 is not None and 乙4.yang > 乙前 - 2.0,
+       f"悟道者未渡（乙阳 {乙前:.0f}→{乙4.yang:.0f}）")
+    摇头 = [e for e in ev4 if e["kind"] == "不渡"]
+    ok("回光·摇头留痕一次", len(摇头) == 1, f"不渡 {len(摇头)} 起")
+    for _ in range(GLEAM_TICKS + 2):
+        w4.tick += 1
+        if 甲4.alive:
+            甲4.decide(w4, s4.spirits, w4.tick, s4._emit, s4.rng)
+    ok("回光·寿尽窗尽安然闭目", not 甲4.alive,
+       "窗尽即亡（寿终）")
+
 
 # ── 8.9 安全阀静默（v8-P1：负反馈接管，硬顶永不触发）──────────
 def test_valves_silent():
