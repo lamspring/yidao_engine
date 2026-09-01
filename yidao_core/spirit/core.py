@@ -140,9 +140,19 @@ class 核心Mixin:
             if self.yang > cap:
                 world.qi.归还(self.y, self.x, 阳=self.yang - cap)   # 衰老之阳还于天地
                 self.yang = cap
-        if tick - self.诞生念 >= self.寿数:
-            self._寿终(world, tick, report, spirits)
-            return
+        if tick - self.诞生念 >= self.寿数 and self._回光 is None:
+            # 寿尽亦得回光（D1 扩写，落地实录注明）：阳寿将尽是"油尽灯枯"的本义——
+            # 非横死者，残阳一振，回光窗内得归家、口述、托付，窗尽安然闭目
+            if self.yang > 0.0 and not self._回光过 \
+                    and tick - self._斗伤念 > 32:
+                self._回光 = tick
+                self._回光过 = True
+                report(tick, (self.y, self.x),
+                       f"{self.name} 阳寿将尽，忽而精神一振（回光）（因：残阳一振，非关好转）",
+                       kind="回光", actor=self.name)
+            else:
+                self._寿终(world, tick, report, spirits)
+                return
         if not self._已成年:
             self._幼年(world, spirits, tick, report, rng)
             return
@@ -172,8 +182,12 @@ class 核心Mixin:
         近火 = world.fire_near(self.y, self.x) is not None
         气温 = float(world.temp[self.y, self.x])
         在家 = (self.y, self.x) == self._栖身所()
-        安枕 = 夜 and 在家 and self.yang > HUNGER_YANG and self.水分 > THIRST_URGENT
-        逸散 = YANG_DECAY * self.metabo * (0.5 if 安枕 else 1.0)
+        # 回光窗内，一切阈值按假象值评估（旁人眼中与常人无异）
+        安枕 = 夜 and 在家 and self._视阳() > HUNGER_YANG and self.水分 > THIRST_URGENT
+        # 代谢定率化（v8-P0D）：自然逸散 = 阳 × 率 × 体质 × 昼夜/饥渴修正
+        # （率 0.00125/念，阳 80 时与旧制 0.10 持平）——囤阳自带持有成本，
+        # 财富上限自发形成；淋雨/严寒为外力冲击，定额附加不动
+        逸散 = self.yang * YANG_RATE * self.metabo * (0.5 if 安枕 else 1.0)
         if self.水分 < THIRST_LOW:
             逸散 *= 1.5
         # 夜雨淋身：无檐之躯，冷雨耗阳；寒夜无火，冷气侵骨——有寒衣者减半
@@ -222,6 +236,44 @@ class 核心Mixin:
             self._积学("制陶", 25.0, tick, report,
                        "痛惜腐坏之粮，忽悟可烧土为瓮以储之", "腐坏之痛")
 
+        # ── 回光返照（v8-P0D·D1，作者拍板）：油尽灯枯之际，残阳一振 ──
+        # 窗尽即亡：余阳燃尽——寿尽者安然闭目（寿终），阳竭者按阳尽结算，皆注明回光而逝
+        if self._回光 is not None and tick - self._回光 >= GLEAM_TICKS:
+            self._回光 = None
+            if tick - self.诞生念 >= self.寿数:
+                self._寿终(world, tick, report, spirits, 回光逝=True)
+            else:
+                self.yang = 0.0
+                self._死否(world, tick, report,
+                           "油尽灯枯，残阳一振而灭——方才那场精神竟是回光", spirits)
+            return
+        # 悟道者渡阳：邻有回光者，以自身之阳渡之——渡二得一，大道不廉价。
+        # 凡手不可救：寻常分食喂水不破假象；唯悟道者可续（此前因，非后果——
+        # 续命之能须在回光发生之前早已修得；世上先有一位悟道者，回光才有逆转之可能）
+        if self._回光 is None and len(self.knowledge) >= GLEAM_SAGE_KNOW \
+                and self.悟性 >= GLEAM_SAGE_WIT and self.yang > 40.0:
+            for b in self._邻居们(spirits):
+                if b._回光 is not None:
+                    渡 = min(self.yang - 30.0, 12.0)   # 渡者留存，倾囊有限
+                    if 渡 > 0:
+                        转阳(world, self, b, 渡, 率=0.5)   # 渡二得一（余者归场）
+                        if b.yang > GLEAM_SAVE:
+                            b._回光 = None     # 残阳得续，回光解除
+                            b.remember(f"{self.name} 渡阳救了我", "救命之恩", self.name, 0.95, tick)
+                            report(tick, (self.y, self.x),
+                                   f"{b.name} 弥留之际得 {self.name} 渡阳续命"
+                                   f"（因：{self.name} 悟得大道，识得残阳可续——非世间常手能为）",
+                                   kind="渡阳", actor=self.name, target=b.name)
+                    break
+        # 回光触发：阳首次跌破 0.8 且非战斗重伤所致（横死无回光），一生仅此一次
+        if self._回光 is None and not self._回光过 and 0.0 < self.yang < GLEAM_AT \
+                and tick - self._斗伤念 > 32:
+            self._回光 = tick
+            self._回光过 = True
+            report(tick, (self.y, self.x),
+                   f"{self.name} 油尽灯枯，忽而精神一振（回光）（因：残阳一振，非关好转）",
+                   kind="回光", actor=self.name)
+
         if self._死否(world, tick, report, "阳尽", spirits):
             return
 
@@ -239,8 +291,9 @@ class 核心Mixin:
             self._观察(world, tick)
             return
 
-        # 二、饥渴 → 求生为第一要务（好斗者饥饿时先动抢夺之念）
-        if self.yang < HUNGER_YANG:
+        # 二、饥渴 → 求生为第一要务（好斗者饥饿时先动抢夺之念）。
+        # 回光窗内按假象值评估：垂死者不困于饥色，得归家、口述、馈赠、托付
+        if self._视阳() < HUNGER_YANG:
             if self.aggr > ROB_AGGR and self._尝试抢夺(world, spirits, tick, report, rng):
                 return
             self._觅食(world, spirits, tick, report, rng)
@@ -310,8 +363,8 @@ class 核心Mixin:
                 self._走向(world, home[0], home[1], rng)
             return
 
-        # 五、悍戾者饥饿线放宽：霸凌不靠饿，靠性
-        if self.aggr > ROB_AGGR and self.yang < ROB_GREEDY_YANG:
+        # 五、悍戾者饥饿线放宽：霸凌不靠饿，靠性（回光窗内按假象值评估）
+        if self.aggr > ROB_AGGR and self._视阳() < ROB_GREEDY_YANG:
             if self._尝试抢夺(world, spirits, tick, report, rng):
                 return
 
@@ -353,8 +406,8 @@ class 核心Mixin:
         if self._百工(world, spirits, tick, report, rng):
             return
 
-        # 十、有"变强"目标且安全 → 锻炼
-        if "变强" in self.goals and threat is None and self.yang > TRAIN_SAFE_YANG:
+        # 十、有"变强"目标且安全 → 锻炼（回光窗内按假象值评估）
+        if "变强" in self.goals and threat is None and self._视阳() > TRAIN_SAFE_YANG:
             self._锻炼(tick, report)
             return
 
@@ -544,6 +597,12 @@ class 核心Mixin:
             self.mood["疲惫"] = min(1.0, self.mood["疲惫"] + 0.01)
             self.training = False
 
+    def _视阳(self) -> float:
+        """回光窗内的假象阳（v8-P0D·D1）：窗中一切决策阈值按 45 评估——
+        假象即真实：旁人只看得见行为，分辨不出回光与好转。
+        窗内耗阳仍循定率从真阳出（假象不造能量）。"""
+        return GLEAM_FAKE if self._回光 is not None else self.yang
+
     def _耗阳(self, amount: float):
         """阳之逸散：就地归还炁场——洒水壶，走到哪撒到哪（宇宙底座第一律）。"""
         扣 = min(self.yang, amount)
@@ -597,16 +656,18 @@ class 核心Mixin:
             for m in 非永存[:len(self.memories) - 40]:
                 self.memories.remove(m)
 
-    def _寿终(self, world: World, tick: int, report, spirits: list):
-        """寿数已尽：不是被杀，不是饿死，是阳寿自然竭尽——安然闭目。"""
+    def _寿终(self, world: World, tick: int, report, spirits: list, 回光逝: bool = False):
+        """寿数已尽：不是被杀，不是饿死，是阳寿自然竭尽——安然闭目。
+        回光逝者：窗尽而灭，注明"方才那场精神竟是回光"。"""
         world.生灵归账(self.y, self.x, self.yang, self.水分)   # 余阳、形阴、躯中残水，尽数归还
         self.yang = 0.0
         self.水分 = 0.0
         self.alive = False
         self.卒念 = tick
         world.add_mark("尸骨", self.y, self.x, 2 * TICKS_PER_DAY, 标签=self.name)
+        注 = "——方才那场精神竟是回光" if 回光逝 else ""
         report(tick, (self.y, self.x),
-               f"{self.name} 寿数已尽，安然闭目，遗骨归于尘土（因：阳寿自然竭尽）",
+               f"{self.name} 寿数已尽，安然闭目{注}，遗骨归于尘土（因：阳寿自然竭尽）",
                kind="寿终", actor=self.name)
         self._善后(world, tick, report, spirits)
         self._盖棺()

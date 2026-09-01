@@ -244,6 +244,61 @@ def test_v8_p0():
     ok("定率·火熄仍发生", 熄 >= 1, f"火熄 {熄} 起")
 
 
+# ── 8.8 回光返照构造测试（v8-P0D·D1 验收）────────────────
+def test_gleam():
+    from yidao_core.spirit.base import 转阳, GLEAM_TICKS
+
+    # 一、凡俗喂食于回光窗内不解除回光（假象不破），窗尽即亡
+    s = Session.genesis(seed=42)
+    w = s.world
+    甲 = s.spirits[0]
+    甲.yang = 0.5
+    甲._斗伤念 = -999
+    甲.decide(w, s.spirits, w.tick, s._emit, s.rng)
+    ok("回光·触发", 甲._回光 is not None and 甲._回光过, "阳 0.5 自然衰竭入回光")
+    乙 = s.spirits[1]
+    乙.yang = 80.0
+    转阳(w, 乙, 甲, 20.0)          # 凡俗喂食：真实阳升高
+    ok("回光·凡俗喂食不破假象", 甲._回光 is not None and 甲.yang > 5.0,
+       f"真阳 {甲.yang:.1f} 而回光仍存")
+    死前 = 甲.alive
+    for _ in range(GLEAM_TICKS + 2):
+        w.tick += 1
+        if 甲.alive:
+            甲.decide(w, s.spirits, w.tick, s._emit, s.rng)
+    ok("回光·窗尽即亡", 死前 and not 甲.alive, "喂食救不回，窗尽即亡")
+
+    # 二、悟道者渡阳则活转（渡二得一，渡者自损过半）；且一生至多一次
+    s2 = Session.genesis(seed=7)
+    w2 = s2.world
+    甲2, 乙2 = s2.spirits[0], s2.spirits[1]
+    甲2.yang = 0.5
+    甲2._斗伤念 = -999
+    甲2.decide(w2, s2.spirits, w2.tick, s2._emit, s2.rng)
+    assert 甲2._回光 is not None
+    乙2.knowledge = {"建造", "种植", "制器", "取火", "烹饪", "渔猎"}   # 六门贯通
+    乙2.悟性 = 0.8
+    乙2.yang = 90.0
+    乙2.y, 乙2.x = 甲2.y, 甲2.x      # 相邻
+    甲前, 乙前 = 甲2.yang, 乙2.yang
+    乙2.decide(w2, s2.spirits, w2.tick, s2._emit, s2.rng)
+    ok("回光·悟道渡阳活转", 甲2._回光 is None and 甲2.yang > 5.0,
+       f"残阳得续至 {甲2.yang:.1f}")
+    ok("回光·渡二得一", 乙前 - 乙2.yang > 1.8 * (甲2.yang - 甲前),
+       f"渡者损 {乙前 - 乙2.yang:.1f}，得者续 {甲2.yang - 甲前:.1f}")
+    甲2.yang = 0.5
+    甲2.decide(w2, s2.spirits, w2.tick + 40, s2._emit, s2.rng)
+    ok("回光·一生至多一次", 甲2._回光 is None, "回光过后再无回光")
+
+    # 三、战斗致死者无回光（横死无回光）
+    s3 = Session.genesis(seed=123)
+    丙 = s3.spirits[2]
+    丙.yang = 0.5
+    丙._斗伤念 = s3.world.tick     # 方自战场负伤而归
+    丙.decide(s3.world, s3.spirits, s3.world.tick, s3._emit, s3.rng)
+    ok("回光·横死无回光", 丙._回光 is None, "战斗负伤者阳破阈而不入回光")
+
+
 # ── 9.5 五行相律（土与水）─────────────────────
 def test_phases():
     w = World(seed=42)
@@ -348,6 +403,7 @@ if __name__ == "__main__":
     test_long_run()
     test_rate_decay()
     test_v8_p0()
+    test_gleam()
     test_phases()
     test_components()
     test_jurassic()

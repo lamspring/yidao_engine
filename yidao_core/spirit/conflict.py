@@ -210,6 +210,8 @@ class 争斗Mixin:
         胜, 败 = (self, target) if pa >= pd else (target, self)
         败._耗阳(rng.uniform(12.0, 20.0))   # 分出高下，不必见生死；搏耗之阳就地归还
         胜._耗阳(rng.uniform(2.0, 5.0))
+        败._斗伤念 = tick     # 战斗负伤之据：横死无回光（v8-P0D·D1）
+        胜._斗伤念 = tick
 
         world.add_mark("刻痕", self.y, self.x, TICKS_PER_DAY // 2)
         report(tick, (self.y, self.x),

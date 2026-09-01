@@ -90,7 +90,7 @@ class 婚育Mixin:
     def _幼年(self, world: World, spirits: list, tick: int, report, rng):
         """幼崽不事生产、不争斗：跟着父母，饿了受哺，看着学着长大。"""
         self._心情漂移()
-        self._耗阳(YANG_DECAY * self.metabo * 0.6)   # 孩童耗阳少些
+        self._耗阳(self.yang * YANG_RATE * self.metabo * 0.6)   # 孩童耗阳少些（定率化）
         排 = min(self.水分, THIRST_DECAY)
         self.水分 -= 排
         world.water[self.y, self.x] += 排 * BODY2FIELD   # 汗溺之排，就地还场（水过身体，终还于土）

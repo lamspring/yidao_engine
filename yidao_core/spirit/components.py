@@ -141,6 +141,10 @@ class Itinerary:
     _家传_day: int = -1
     _已成年: bool = False
     _上次诞育: int = 0
+    # ── 回光返照（v8-P0D·D1）──
+    _回光: int | None = None      # 回光起始念（None=不在回光中）
+    _回光过: bool = False         # 一生仅此一次
+    _斗伤念: int = -999           # 最近战斗负伤之念（横死无回光之据）
 
 
 # 路由表：扁平名 → 组件持有名。Spirit 的 __getattr__/__setattr__ 依此把

@@ -60,7 +60,16 @@ except ImportError:  # 允许 v6/fishbowl.py 以脚本方式直跑
 # 0. 灵体常数（调参集中于此）
 # ───────────────────────────────────────────
 
-YANG_DECAY = 0.10       # 阳·每念自然逸散
+YANG_DECAY = 0.10       # （已废，v8-P0D）旧定额逸散——定率化后由 YANG_RATE 代之
+YANG_RATE = 0.00125     # 阳·每念自然逸散率（率 × 存量；阳 80 时与旧制 0.10 持平）
+
+# ── 回光返照（v8-P0D·D1，作者 2026-09-01 拍板）──
+GLEAM_AT = 0.8          # 回光阈：阳首次跌破此值且非战斗所致 → 入回光态
+GLEAM_TICKS = 12        # 回光窗（念）：窗内一切决策阈值按假象值评估
+GLEAM_FAKE = 45.0       # 假象值：窗中如常人——能行走、交谈、口述、馈赠、归家
+GLEAM_SAVE = 5.0        # 残阳得续之阈：渡阳拉回此值之上，回光解除
+GLEAM_SAGE_KNOW = 6     # 悟道者认定：贯通六门技艺
+GLEAM_SAGE_WIT = 0.75   # 且悟性过人——结构性稀有，百年难遇一人
 MOVE_COST = 0.22        # 移动耗阳
 TRAIN_COST = 0.30       # 锻炼耗阳
 EAT_GAIN = 22.0         # 吃草补阳
@@ -541,6 +550,13 @@ __all__ = [
     "Well",
     "World",
     "YANG_DECAY",
+    "YANG_RATE",
+    "GLEAM_AT",
+    "GLEAM_TICKS",
+    "GLEAM_FAKE",
+    "GLEAM_SAVE",
+    "GLEAM_SAGE_KNOW",
+    "GLEAM_SAGE_WIT",
     "YIN_FENCE",
     "YIN_FIRE",
     "YIN_HUT",
