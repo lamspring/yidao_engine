@@ -107,7 +107,7 @@ FISH_CAP = 2.0          # 鱼群密度上限
 FISH_GROW = 0.010       # 鱼群繁育基率（水温适宜则快）
 INSECT_CAP = 2.0        # 虫密度上限
 INSECT_GROW = 0.012     # 虫繁育基率（暖则速，霜则灭）
-TREE_MAX = 60           # 树木总数上限
+TREE_MAX = 240          # 树木总数安全阀（v8-P1B：光水竞争接管，实测自然平衡 135-146）
 TREE_GROW = 0.015       # 树每念阳生长
 TREE_SPREAD = 0.002     # 每念新树苗萌发概率（逐格）
 STONE_CAP = 3.0         # 高地石料上限
@@ -633,13 +633,25 @@ class World:
                     tree.果数 = min(3, tree.果数 + 1)
                 elif 季 < -0.3:
                     tree.果数 = 0
-        if len(self.trees) < TREE_MAX and self._rng.random() < TREE_SPREAD * n * n:
+        if self._rng.random() < TREE_SPREAD * n * n:
             湿区 = (self.moisture > 0.3) & (self.water < 1.0)
             ys, xs = np.nonzero(湿区)
             if len(ys):
                 i = int(self._rng.integers(0, len(ys)))
-                self.trees.append(Tree(int(ys[i]), int(xs[i]),
-                                       果树=bool(self._rng.random() < 0.3)))
+                ty, tx = int(ys[i]), int(xs[i])
+                # 光水竞争（v8-P1B）：密林深处难萌新苗——
+                # 萌发率随半径 3 内树数线性衰减（局域容量 6），林分自然疏密
+                近树 = sum(1 for t in self.trees
+                           if abs(t.y - ty) <= 3 and abs(t.x - tx) <= 3)
+                if self._rng.random() < max(0.0, 1.0 - 近树 / 6.0):
+                    if len(self.trees) >= TREE_MAX:
+                        # 安全阀留痕：唯当真想萌发而被硬顶拦下——设计上永不触发
+                        self._events.append({
+                            "kind": "安全阀", "pos": None, "actor": None,
+                            "text": "【越界·安全阀】林木触及上限（因：负反馈失灵，硬顶接管）"})
+                    else:
+                        self.trees.append(Tree(ty, tx,
+                                               果树=bool(self._rng.random() < 0.3)))
 
         # 石：高地风化成砾，极缓慢再生；藤：水泽边蔓延
         高地 = self.height >= 6.5

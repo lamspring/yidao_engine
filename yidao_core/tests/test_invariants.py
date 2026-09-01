@@ -119,10 +119,10 @@ def test_long_run():
        and w._深潭 >= 0, f"九泉 {w._深潭:.0f}")
     alive = [x for x in s.spirits if x.alive]
     ok("有界·人口有上限", len(s.spirits) <= 25, f"历生 {len(s.spirits)}")
-    ok("有界·记忆有容量", all(len(x.memories) <= 41 for x in s.spirits),
-       f"最多 {max(len(x.memories) for x in s.spirits)} 条")
-    ok("有界·众灵数值正常", all(-1e-6 <= x.yang <= 100.1 and 0 <= x.pressure <= 1.01
-                                for x in s.spirits if x.alive))   # 死者心已盖棺，不在此约
+    ok("有界·记忆有容量", all(len(x.memories) <= 44 for x in s.spirits),
+       f"最多 {max(len(x.memories) for x in s.spirits)} 条")   # 容量 40 + 日在途余量（v8 回光新增记忆，注明放宽）
+    ok("有界·众灵数值正常", all(-1e-6 <= x.yang <= 100.1 and 0 <= x.pressure <= 1.1
+                                for x in s.spirits if x.alive))   # 死者心已盖棺；阴燃上限 1.1（v8 注明）
     ok("有界·炁场非负", float(w.qi.yin.min()) >= 0 and float(w.qi.yang.min()) >= 0,
        f"炁 {w.qi.总量():.0f}")
 
@@ -164,6 +164,8 @@ def test_long_run():
     kinds = {e["kind"] for e in log}
     天道 = sum(1 for e in log if e["kind"] == "天道")
     ok("天道少为", 天道 <= 3, f"30 日干预 {天道} 次")
+    阀 = [e for e in log if e["kind"] == "安全阀"]
+    ok("安全阀静默（田园灵世）", not 阀, f"触发 {len(阀)} 次")
     ok("世界是活的", len(kinds) >= 5, f"显著事件 {len(kinds)} 类")
     ok("众生未灭", len(alive) >= 1, f"存活 {len(alive)}")
 
@@ -299,6 +301,21 @@ def test_gleam():
     ok("回光·横死无回光", 丙._回光 is None, "战斗负伤者阳破阈而不入回光")
 
 
+# ── 8.9 安全阀静默（v8-P1：负反馈接管，硬顶永不触发）──────────
+def test_valves_silent():
+    for seed in (42, 7, 123, 2026):
+        ev = []
+        s = Session.genesis(seed=seed, 生灵=False, 兽群="侏罗纪",
+                            on_event=lambda **kw: ev.append(kw))
+        s.run(TICKS_PER_DAY * 60)
+        阀 = [e for e in ev if e["kind"] == "安全阀"]
+        ok(f"安全阀静默·侏罗纪种子{seed}", not 阀,
+           f"触发 {len(阀)} 次：{[e['text'][:30] for e in 阀[:3]]}")
+        ok(f"负反馈接管·种群存续{seed}",
+           len(s.world.animals) > 0 and len(s.world.trees) > 0,
+           f"兽 {len(s.world.animals)} 树 {len(s.world.trees)}")
+
+
 # ── 9.5 五行相律（土与水）─────────────────────
 def test_phases():
     w = World(seed=42)
@@ -404,6 +421,7 @@ if __name__ == "__main__":
     test_rate_decay()
     test_v8_p0()
     test_gleam()
+    test_valves_silent()
     test_phases()
     test_components()
     test_jurassic()

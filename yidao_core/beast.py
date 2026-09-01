@@ -345,16 +345,20 @@ def 兽行(world, a, spirits, rng):
 
 def _食素(world, a, p, rng, 曲):
     """植食/杂食：就草虫而食（食入记日月之泵）；此处无食，向更丰处挪；
-    四顾皆贫，则向记忆中的丰草处去（兽忆引路）。"""
+    四顾皆贫，则向记忆中的丰草处去（兽忆引路）。
+    捕食耦合（v8-P1A，质量作用律）：扣食 min(资源 × 0.3, 旧定额)——
+    猎物稀少时捕食者自然吃不饱；食入之阳随实扣而减。"""
     旧 = a.阳
     if p["食"] == "虫":
         if world.insects[a.y, a.x] > 0.3:
-            world.insects[a.y, a.x] -= 0.3
-            a.阳 = min(p["阳"], a.阳 + 6.0 * 曲)
+            扣 = min(world.insects[a.y, a.x] * 0.3, 0.3)
+            world.insects[a.y, a.x] -= 扣
+            a.阳 = min(p["阳"], a.阳 + 6.0 * (扣 / 0.3) * 曲)
     else:
         if world.grass[a.y, a.x] > 0.25:
-            world.grass[a.y, a.x] -= 0.2
-            a.阳 = min(p["阳"], a.阳 + 5.0 * 曲)
+            扣 = min(world.grass[a.y, a.x] * 0.3, 0.2)
+            world.grass[a.y, a.x] -= 扣
+            a.阳 = min(p["阳"], a.阳 + 5.0 * (扣 / 0.2) * 曲)
     world.账.泵 += a.阳 - 旧
     if a.阳 > 旧:
         兽记(a.忆食, a.y, a.x, world.tick)     # 曾饱食处，记下
@@ -433,7 +437,14 @@ def 繁衍(world, rng):
     """温饱且成对则繁殖：新生儿自炁凝聚（幼体，生而弱小，逐日抽条）。"""
     from .world import ANIMAL_MAX
     if len(world.animals) >= ANIMAL_MAX:
+        # 安全阀留痕（v8-P1A）：设计上永不触发；触发即负反馈失灵的 bug。
+        # 仅于"进入顶格"之念留痕一次，不刷屏
+        if not getattr(world, "_阀兽活", False):
+            world._阀兽活 = True
+            world._events.append({"kind": "安全阀", "pos": None, "actor": None,
+                                  "text": "【越界·安全阀】兽群触及上限（因：负反馈失灵，硬顶接管）"})
         return
+    world._阀兽活 = False
     for i in range(len(world.animals)):
         for j in range(i + 1, len(world.animals)):
             x, y = world.animals[i], world.animals[j]
@@ -451,19 +462,31 @@ def 繁衍(world, rng):
             # 肉食者唯温饱乃育（阳逾七成）——掠食者的繁荣须有节制
             if p["食"] == "肉" and (x.阳 < p["阳"] * 0.7 or y.阳 < p["阳"] * 0.7):
                 continue
-            # 密度负反馈：本地食料贫瘠处不繁（植食看草虫，肉食看猎场与尸）
+            # 密度负反馈连续化（v8-P1A）：贫瘠则稀育而非绝育；拥挤亦抑育
+            率 = p.get("繁率", BREED_CHANCE)
+            容纳 = {"小": 4, "中": 3, "大": 3, "巨": 2}.get(p["体型"], 3)
+            近同 = sum(1 for b in world.animals if b.种类 == x.种类 and b is not x
+                       and abs(b.y - x.y) <= 3 and abs(b.x - x.x) <= 3)
+            率 *= max(0.0, 1.0 - 近同 / 容纳)     # 领域性密度制约：簇拥之处不繁
+            if 率 <= 0:
+                continue
             if p["食"] == "肉":
                 猎场 = [b for b in world.animals if BEASTS[b.种类]["食"] != "肉"
                         and abs(b.y - x.y) <= SENSE_BEAST * 2
                         and abs(b.x - x.x) <= SENSE_BEAST * 2]
-                if not 猎场 and not any(abs(c.y - x.y) <= 8 and abs(c.x - x.x) <= 8
-                                        for c in world.carrions):
-                    continue
+                尸场 = sum(1 for c in world.carrions
+                           if abs(c.y - x.y) <= 8 and abs(c.x - x.x) <= 8)
+                if not 猎场 and not 尸场:
+                    率 *= 0.2        # 无猎场亦无腐尸：稀育
             else:
                 场 = world.insects if p["食"] == "虫" else world.grass
                 本地 = [场[y2, x2] for y2, x2 in _近(world, x.y, x.x, 3)]
-                if sum(本地) / len(本地) < 0.18:
-                    continue
-            if rng.random() < p.get("繁率", BREED_CHANCE):
+                率 *= max(0.0, min(1.0, (sum(本地) / len(本地)) / 0.36))
+                if p["食"] == "虫":
+                    # 始祖鸟专项：繁率随当地虫密度（虫盛则兴，虫竭则歇）
+                    from .world import INSECT_CAP
+                    率 *= max(0.0, min(1.0,
+                        float(world.insects[x.y, x.x]) / INSECT_CAP))
+            if rng.random() < 率:
                 兽生(world, x.种类, x.y, x.x, rng, 幼体=True)
                 return
