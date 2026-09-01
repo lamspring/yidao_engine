@@ -7,6 +7,7 @@
 本期（S1）：事件簿 + 可讲述性报告（纯规则，零 LLM）。
 """
 import argparse
+import os
 import sys
 
 from yidao_core.session import Session
@@ -14,6 +15,15 @@ from yidao_core.world import TICKS_PER_DAY
 
 from .recorder import EventLedger
 from .selector import ChainSelector
+
+
+def _写文件(path: str, text: str):
+    """落盘前自建目录——输出目录不存在不是世界的错。"""
+    d = os.path.dirname(path)
+    if d:
+        os.makedirs(d, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
 
 
 def main(argv=None) -> int:
@@ -31,12 +41,10 @@ def main(argv=None) -> int:
     sel = ChainSelector(ledger, session.spirits)
     md, js = sel.report(args.seed, args.days)
     if args.out_md:
-        with open(args.out_md, "w", encoding="utf-8") as f:
-            f.write(md)
+        _写文件(args.out_md, md)
     if args.out_json:
         import json
-        with open(args.out_json, "w", encoding="utf-8") as f:
-            json.dump(js, f, ensure_ascii=False, indent=1)
+        _写文件(args.out_json, json.dumps(js, ensure_ascii=False, indent=1))
     print(md)
     return 0
 
